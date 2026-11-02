@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>LED Strip Simulator</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #050608; color: #8a93a6; font: 13px system-ui, sans-serif; }
+    body { display: flex; justify-content: center; align-items: stretch; gap: 16px; padding: 12px; box-sizing: border-box; }
+    canvas { height: 100%; background: #0d0f14; border-radius: 6px; }
+    #info { align-self: flex-end; }
+  </style>
+</head>
+<body>
+  <canvas id="strip"></canvas>
+  <div id="info">connecting…</div>
+  <script>
+    // Draws the strip vertically: LED 0 at the bottom, like the real one.
+    const canvas = document.getElementById("strip");
+    const ctx = canvas.getContext("2d");
+    const info = document.getElementById("info");
+    let n = 0;
+
+    function draw(frame) {
+      const h = canvas.clientHeight * devicePixelRatio;
+      const pitch = h / n;
+      const w = Math.max(14, pitch * 3);
+      if (canvas.height !== Math.round(h) || canvas.width !== Math.round(w)) {
+        canvas.height = Math.round(h);
+        canvas.width = Math.round(w);
+        canvas.style.width = `${w / devicePixelRatio}px`;
+      }
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const r = Math.max(1, pitch * 0.42);
+      for (let i = 0; i < n; i++) {
+        const [cr, cg, cb] = [frame[i * 3], frame[i * 3 + 1], frame[i * 3 + 2]];
+        const y = h - (i + 0.5) * pitch;
+        const lit = cr + cg + cb > 0;
+        ctx.fillStyle = lit ? `rgb(${cr},${cg},${cb})` : "#1a1d25";
+        if (lit) { ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = r * 3; } else { ctx.shadowBlur = 0; }
+        ctx.beginPath();
+        ctx.arc(w / 2, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function connect() {
+      const ws = new WebSocket(`ws://${location.host}/ws/sim`);
+      ws.binaryType = "arraybuffer";
+      ws.onmessage = (e) => {
+        if (typeof e.data === "string") {
+          n = JSON.parse(e.data).numLeds;
+          info.textContent = `${n} LEDs`;
+        } else if (n) {
+          draw(new Uint8Array(e.data));
+        }
+      };
+      ws.onclose = () => { info.textContent = "disconnected"; setTimeout(connect, 1000); };
+    }
+    connect();
+  </script>
+</body>
+</html>

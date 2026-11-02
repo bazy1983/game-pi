@@ -1,0 +1,20 @@
+[Unit]
+Description=LED Games server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# rpi_ws281x needs root for DMA/PWM access.
+User=root
+WorkingDirectory=/opt/ledgames
+Environment=LED_BACKEND=ws281x
+Environment=LED_COUNT=195
+Environment=LED_BRIGHTNESS=0.5
+# Set to roughly 80% of your strip power supply's rating (e.g. 12A → 9600).
+Environment=LED_MAX_MA=9600
+Environment=PORT=80
+ExecStart=/opt/ledgames/.venv/bin/python -m ledgames
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
