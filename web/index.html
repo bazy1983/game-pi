@@ -37,7 +37,35 @@
       <button id="quit-btn" class="quit">Quit</button>
     </header>
     <div class="danger"><div id="danger-bar"></div></div>
-    <div id="tiles" class="tiles"></div>
+    <div class="arena">
+      <div id="tiles" class="tiles"></div>
+      <div id="poison" class="poison hidden">
+        <div class="poison-text">☠️ Poisoned!</div>
+        <div class="poison-bar"><div id="poison-fill"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Multiplayer lobby -->
+  <section id="view-lobby" class="view lobby hidden">
+    <h1 id="lobby-title"></h1>
+    <p id="lobby-sub" class="muted"></p>
+    <div id="lobby-players" class="lobby-players"></div>
+    <p id="lobby-hint" class="muted center"></p>
+    <button id="lobby-main" class="primary"></button>
+    <button id="lobby-second" class="secondary"></button>
+  </section>
+
+  <!-- Fast Tap -->
+  <section id="view-tap" class="view tap hidden">
+    <header class="hud">
+      <div>
+        <div class="label" id="tap-round"></div>
+        <div id="tap-board" class="board"></div>
+      </div>
+      <button id="tap-quit" class="quit hidden">Quit</button>
+    </header>
+    <button id="tap-pad" class="pad"><span id="tap-msg"></span><small id="tap-sub"></small></button>
   </section>
 
   <!-- Someone else is playing -->
@@ -45,11 +73,14 @@
     <div class="emoji">⚔️</div>
     <h1 id="spectate-title"></h1>
     <p id="spectate-sub" class="muted"></p>
-    <div class="spectate-score">
-      <div class="label">Score</div>
-      <div><span id="spectate-score" class="score">0</span><span class="goal"> / <span id="spectate-goal">0</span></span></div>
+    <div id="spectate-shooter">
+      <div class="spectate-score">
+        <div class="label">Score</div>
+        <div><span id="spectate-score" class="score">0</span><span class="goal"> / <span id="spectate-goal">0</span></span></div>
+      </div>
+      <div class="danger"><div id="spectate-danger-bar"></div></div>
     </div>
-    <div class="danger"><div id="spectate-danger-bar"></div></div>
+    <div id="spectate-board" class="board center-board"></div>
   </section>
 
   <!-- Game over -->

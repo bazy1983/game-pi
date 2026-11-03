@@ -71,6 +71,8 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 .danger { height: 6px; border-radius: 3px; background: #161a23; margin: 14px 0 18px; overflow: hidden; }
 .danger > div { height: 100%; width: 0; background: linear-gradient(90deg, #22dd44, #ffd21f, #ff2a2a); transition: width .3s; }
 
+.arena { flex: 1; position: relative; display: flex; }
+
 .tiles {
   flex: 1;
   display: grid;
@@ -89,6 +91,19 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 }
 .tile:active, .tile.pressed { transform: scale(.96); filter: brightness(1.3); }
 .tiles.cooling .tile { opacity: .45; }
+.tiles.poisoned .tile { filter: grayscale(1) brightness(.35); transform: none; }
+
+.poison {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  pointer-events: none;
+}
+.poison-text { font-size: 34px; font-weight: 800; text-shadow: 0 2px 12px #000; animation: shake .3s ease-in-out infinite; }
+@keyframes shake { 0%, 100% { transform: translateX(-3px); } 50% { transform: translateX(3px); } }
+.poison-bar { width: 60%; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, .15); overflow: hidden; }
+#poison-fill { height: 100%; width: 100%; background: #b4ff3c; }
+#poison-fill.draining { animation: drain linear forwards; }
+@keyframes drain { from { width: 100%; } to { width: 0; } }
 
 /* --- spectate & result -------------------------------------------------- */
 
@@ -97,6 +112,50 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 .spectate .emoji { animation: clash 1.2s ease-in-out infinite; }
 @keyframes clash { 0%, 100% { transform: rotate(-8deg) scale(1); } 50% { transform: rotate(8deg) scale(1.12); } }
 .spectate-score { margin-top: 28px; }
+
+/* --- lobby & scoreboard ------------------------------------------------- */
+
+.center { text-align: center; }
+.lobby { justify-content: center; }
+.lobby-players { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 24px 0 8px; }
+.slot {
+  aspect-ratio: 1; border-radius: 18px; background: #161a23;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  font-size: 14px; font-weight: 600; color: #0b0d12;
+}
+.slot.empty { border: 2px dashed #2a3040; color: #4a5263; }
+.slot.you { outline: 3px solid #eef1f6; outline-offset: 3px; }
+.slot .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .75; }
+
+.board { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.center-board { justify-content: center; margin-top: 24px; }
+.chip {
+  display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px;
+  background: #161a23; font-size: 14px; font-weight: 600;
+}
+.chip .dot { width: 14px; height: 14px; border-radius: 50%; }
+.chip.you { outline: 2px solid #eef1f6; }
+.chip.out, .chip.inactive { opacity: .35; }
+.chip .stars { letter-spacing: 1px; color: #ffd21f; min-width: 1ch; }
+
+/* --- fast tap ------------------------------------------------------------- */
+
+.tap { height: 100%; padding-bottom: 20px; }
+.tap .hud { align-items: flex-start; margin-bottom: 18px; }
+.pad {
+  flex: 1; border-radius: 28px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  color: #0b0d12; text-align: center; padding: 24px;
+  box-shadow: inset 0 -10px 0 rgba(0, 0, 0, .25);
+  user-select: none; -webkit-user-select: none;
+  transition: filter .15s, opacity .15s;
+}
+.pad span { font-size: 30px; font-weight: 800; }
+.pad small { font-size: 17px; font-weight: 600; opacity: .8; }
+.pad.dim { filter: brightness(.45); }
+.pad.out { filter: grayscale(1) brightness(.3); color: #eef1f6; }
+.pad.out small, .pad.dim small { opacity: 1; }
+.pad.pressed { filter: brightness(1.35); }
 
 /* --- misc ---------------------------------------------------------------- */
 

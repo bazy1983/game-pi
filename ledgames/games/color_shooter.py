@@ -30,6 +30,13 @@ COOLDOWN = 0.3  # seconds between shots when fire mode is "cooldown"
 BLINK_HIDDEN = 2.0
 BLINK_SHOWN = 0.3
 
+# Hard/insane: the snake spits poison down at the shooter. A shot of the same
+# color destroys it; other colors pass through. If it reaches the shooter, the
+# shooter can't fire for a while.
+POISON_TRAVEL_TIME = 2.5  # seconds to cross the whole strip (shots take 2.0)
+SPIT_INTERVAL = (5.0, 10.0)  # random seconds between spits
+POISON_DURATION = 3.0  # seconds the shooter can't fire after being hit
+
 
 @dataclass(frozen=True)
 class Difficulty:
@@ -37,13 +44,14 @@ class Difficulty:
     spawn_interval: float
     goal: int
     blink: bool = False
+    poison: bool = False
 
 
 DIFFICULTIES = {
     "easy": Difficulty(colors=3, spawn_interval=2.5, goal=100),
     "normal": Difficulty(colors=4, spawn_interval=2.0, goal=150),
-    "hard": Difficulty(colors=5, spawn_interval=1.5, goal=200),
-    "insane": Difficulty(colors=5, spawn_interval=1.5, goal=250, blink=True),
+    "hard": Difficulty(colors=5, spawn_interval=1.5, goal=200, poison=True),
+    "insane": Difficulty(colors=5, spawn_interval=1.5, goal=250, blink=True, poison=True),
 }
 
 
@@ -61,8 +69,8 @@ class ColorShooter(Game):
         difficulties=[
             Choice("easy", "Easy", "3 colors · slow snake · 100 points"),
             Choice("normal", "Normal", "4 colors · 150 points"),
-            Choice("hard", "Hard", "5 colors · fast snake · 200 points"),
-            Choice("insane", "Insane", "The snake hides its colors · 250 points"),
+            Choice("hard", "Hard", "5 colors · fast snake · spits poison · 200 points"),
+            Choice("insane", "Insane", "Hides its colors · spits poison · 250 points"),
         ],
         default_difficulty="normal",
         settings=[
@@ -83,14 +91,17 @@ class ColorShooter(Game):
         num_leds: int,
         difficulty: str,
         settings: dict[str, str],
+        players: list[str] | None = None,
         rng: random.Random | None = None,
+        **kwargs,
     ):
-        super().__init__(num_leds, difficulty, settings)
+        super().__init__(num_leds, difficulty, settings, players, **kwargs)
         self.cfg = DIFFICULTIES[difficulty]
         self.colors = PALETTE[: self.cfg.colors]
         self.cooldown = COOLDOWN if settings.get("fire_mode") == "cooldown" else 0.0
         self.rng = rng or random.Random()
         self.shot_speed = num_leds / SHOT_TRAVEL_TIME  # LEDs per second
+        self.poison_speed = num_leds / POISON_TRAVEL_TIME
 
         self.t = 0.0
         self.score = 0
@@ -99,6 +110,12 @@ class ColorShooter(Game):
         self.last_fire = -1e9
         self.spawn_timer = 0.0
         self.effect: Fireworks | RedFill | None = None
+
+        self.poisons: list[Shot] = []  # moving down
+        self.spit_timer = self.rng.uniform(*SPIT_INTERVAL)
+        self.poisoned_for = 0.0  # seconds left until the shooter can fire again
+        self.poison_color: GameColor | None = None  # the poison that last hit
+        self.poison_hits = 0  # lets the phone restart its countdown on a repeat hit
 
         start_len = max(1, round(num_leds * INITIAL_FILL))
         self.snake: list[GameColor] = [self._random_color() for _ in range(start_len)]
@@ -132,11 +149,32 @@ class ColorShooter(Game):
             if self._check_lost():
                 return
 
-        # Move shots highest-first so a shot that grows the snake is resolved
-        # before the shots behind it.
+        self.poisoned_for = max(0.0, self.poisoned_for - dt)
+        if self.cfg.poison and self.snake:
+            self.spit_timer -= dt
+            if self.spit_timer <= 0:
+                self.spit_timer = self.rng.uniform(*SPIT_INTERVAL)
+                self.poisons.append(Shot(float(self.head - 1), self._random_color()))
+
+        shot_from = [s.pos for s in self.shots]
+        poison_from = [p.pos for p in self.poisons]
+        for shot in self.shots:
+            shot.pos += self.shot_speed * dt
+        for poison in self.poisons:
+            poison.pos -= self.poison_speed * dt
+        self._shots_meet_poison(shot_from, poison_from)
+
+        for poison in self.poisons[:]:
+            if poison.pos < SHOOTER_SIZE:
+                self.poisons.remove(poison)
+                self.poisoned_for = POISON_DURATION
+                self.poison_color = poison.color
+                self.poison_hits += 1
+
+        # Resolve shots highest-first so a shot that grows the snake is
+        # resolved before the shots behind it.
         self.shots.sort(key=lambda s: s.pos, reverse=True)
         for shot in self.shots[:]:
-            shot.pos += self.shot_speed * dt
             if self.snake and int(shot.pos) >= self.head:
                 self.shots.remove(shot)
                 self._hit(shot)
@@ -145,6 +183,22 @@ class ColorShooter(Game):
             elif shot.pos >= self.num_leds:
                 self.shots.remove(shot)  # flew off the top of an empty strip
 
+    def _shots_meet_poison(self, shot_from: list[float], poison_from: list[float]) -> None:
+        """Destroy poison/shot pairs of the same color that crossed this frame.
+        Shots and poison of different colors pass through each other."""
+        for poison, p_from in list(zip(self.poisons, poison_from)):
+            crossed = [
+                (shot, s_from)
+                for shot, s_from in zip(self.shots, shot_from)
+                if shot.color == poison.color and s_from <= p_from and shot.pos >= poison.pos
+            ]
+            if crossed:
+                # The leading shot is the one that meets the poison first.
+                shot = max(crossed, key=lambda c: c[1])[0]
+                i = self.shots.index(shot)
+                del self.shots[i], shot_from[i]
+                self.poisons.remove(poison)
+
     def _hit(self, shot: Shot) -> None:
         if shot.color == self.snake[0]:
             self.snake.pop(0)
@@ -152,6 +206,7 @@ class ColorShooter(Game):
             if self.score >= self.cfg.goal:
                 self.status = "won"
                 self.shots.clear()
+                self.poisons.clear()
                 self.effect = Fireworks(self.num_leds, rng=self.rng)
         else:
             self.snake.insert(0, shot.color)
@@ -164,14 +219,15 @@ class ColorShooter(Game):
         self.snake = self.snake[: self.max_length]
         self.status = "lost"
         self.shots.clear()
+        self.poisons.clear()
         self.effect = RedFill(self.num_leds)
         return True
 
-    def on_input(self, action: dict[str, Any]) -> None:
+    def on_input(self, player: str, action: dict[str, Any]) -> None:
         if self.status != "playing":
             return
         color = next((c for c in self.colors if c.name == action.get("fire")), None)
-        if color is None or self.t - self.last_fire < self.cooldown:
+        if color is None or self.poisoned_for > 0 or self.t - self.last_fire < self.cooldown:
             return
         self.last_fire = self.t
         self.shots.append(Shot(float(SHOOTER_SIZE), color))
@@ -193,8 +249,12 @@ class ColorShooter(Game):
 
         for i in range(self.num_leds):
             pixels[i] = OFF
+        shooter = WHITE
+        if self.poisoned_for > 0 and self.poison_color:
+            # Poisoned: flash the poison's color until the shooter recovers.
+            shooter = self.poison_color.led if self.t % 0.25 < 0.15 else OFF
         for i in range(SHOOTER_SIZE):
-            pixels[i] = WHITE
+            pixels[i] = shooter
 
         hidden = self._snake_hidden()
         head = self.head
@@ -211,6 +271,15 @@ class ColorShooter(Game):
                 if SHOOTER_SIZE <= i < head and pixels[i] == OFF:
                     pixels[i] = scale(shot.color.led, (1 - k / (tail + 1)) ** 2)
 
+        # Poison falls down, so its tail trails above it.
+        tail = max(1, round(self.poison_speed * SHOT_TAIL_TIME))
+        for poison in self.poisons:
+            bottom = int(poison.pos)
+            for k in range(tail + 1):
+                i = bottom + k
+                if SHOOTER_SIZE <= i < head and pixels[i] == OFF:
+                    pixels[i] = scale(poison.color.led, (1 - k / (tail + 1)) ** 2)
+
         if self.effect:
             self.effect.render(pixels)
 
@@ -222,6 +291,9 @@ class ColorShooter(Game):
             "goal": self.cfg.goal,
             "colors": [{"name": c.name, "hex": c.ui} for c in self.colors],
             "cooldown": self.cooldown,
+            "poisoned": self.poisoned_for > 0,
+            "poison_hits": self.poison_hits,
+            "poison_duration": POISON_DURATION,
             # 0 = snake at its starting length, 1 = touching the shooter.
             "danger": round(max(0.0, min(1.0, 1 - (self.max_length - len(self.snake)) / space)), 2),
         }

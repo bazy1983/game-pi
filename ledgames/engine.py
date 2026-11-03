@@ -1,30 +1,57 @@
-"""Runs the current game at a fixed frame rate and pushes frames to the strip."""
+"""Runs the current game at a fixed frame rate and pushes frames to the strip.
+
+Session phases:
+  idle     nothing running, strip off
+  lobby    a multiplayer game is waiting for players to join
+  playing  a game is running
+  ended    the game is over (its end animation may still be playing)
+
+The host (the phone that opened the game) is the only one who can start or
+quit it. If the host leaves, the next player takes over.
+"""
 
 import asyncio
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from .colors import OFF
+from .effects.lineup import draw_lineup
 from .games import GAMES, Game
-from .leds import Strip
+
+
+@dataclass
+class Lobby:
+    cls: type[Game]
+    difficulty: str
+    settings: dict[str, str]
+    players: list[str]  # client ids; players[0] is the host
 
 
 class Engine:
-    def __init__(self, strip: Strip, fps: int = 30):
+    def __init__(self, strip, fps: int = 30, clock: Callable[[], float] = time.monotonic):
         self.strip = strip
         self.fps = fps
+        self.clock = clock
         self.pixels = [OFF] * strip.num_leds
+        self.lobby: Lobby | None = None
         self.game: Game | None = None
-        self.owner: str | None = None  # client id of the player controlling the game
+        self.host: str | None = None
+        self.left: set[str] = set()  # players who dropped out of the running game
         self.on_change: Callable[[], None] = lambda: None
         self._last_state: dict[str, Any] | None = None
+        self._t = 0.0
 
     # --- commands from the web server ---------------------------------------
 
-    def start(self, game_id: str, difficulty: str, settings: dict[str, str], owner: str) -> str | None:
-        """Start a game. Returns an error message, or None on success."""
-        if self.playing:
+    def open(
+        self, game_id: str, difficulty: str, settings: dict[str, str], host: str, players: list[str] = ()
+    ) -> str | None:
+        """Open a game: single-player games start right away, multiplayer
+        games open a lobby. `players` are added to the lobby after the host
+        (used by "Play again"). Returns an error message, or None."""
+        if self.busy:
             return "A game is already in progress."
         cls = GAMES.get(game_id)
         if cls is None:
@@ -36,18 +63,80 @@ class Engine:
         for s in info.settings:
             value = settings.get(s.id, s.default)
             clean[s.id] = value if value in {o.id for o in s.options} else s.default
-        self.game = cls(self.strip.num_leds, difficulty, clean)
-        self.owner = owner
+
+        self.game = None
+        self.host = host
+        self.left = set()
+        lobby = Lobby(cls, difficulty, clean, [host])
+        if info.max_players == 1:
+            self.lobby = lobby
+            self.begin(host)
+            return None
+        for p in players:
+            if p not in lobby.players and len(lobby.players) < info.max_players:
+                lobby.players.append(p)
+        self.lobby = lobby
         self._changed()
         return None
 
+    def join(self, client_id: str) -> str | None:
+        lobby = self.lobby
+        if lobby is None:
+            return "There's no game to join right now."
+        if client_id in lobby.players:
+            return None
+        if len(lobby.players) >= lobby.cls.info.max_players:
+            return "This game is full."
+        lobby.players.append(client_id)
+        self._changed()
+        return None
+
+    def drop(self, client_id: str) -> None:
+        """A player leaves the lobby or the running game (tapped Leave, or
+        closed their browser). The game stops when nobody is left."""
+        lobby = self.lobby
+        if lobby and client_id in lobby.players:
+            lobby.players.remove(client_id)
+            if not lobby.players:
+                self.stop()
+                return
+            self.host = lobby.players[0]
+            self._changed()
+            return
+
+        game = self.game
+        if not self.playing or client_id not in game.players or client_id in self.left:
+            return
+        self.left.add(client_id)
+        remaining = [p for p in game.players if p not in self.left]
+        if not remaining or game.info.max_players == 1:
+            self.stop()
+            return
+        game.on_leave(client_id)
+        if client_id == self.host:
+            self.host = remaining[0]
+        self._changed()
+
+    def begin(self, client_id: str) -> None:
+        """Host starts the game with everyone in the lobby."""
+        lobby = self.lobby
+        if lobby is None or client_id != self.host:
+            return
+        self.game = lobby.cls(
+            self.strip.num_leds, lobby.difficulty, lobby.settings, players=list(lobby.players), clock=self.clock
+        )
+        self.lobby = None
+        self._changed()
+
     def input(self, client_id: str, action: dict[str, Any]) -> None:
-        if self.playing and client_id == self.owner:
-            self.game.on_input(action)
+        if self.playing and client_id in self.game.players and client_id not in self.left:
+            self.game.on_input(client_id, action)
 
     def stop(self) -> None:
+        self.lobby = None
         self.game = None
-        self.owner = None
+        self.host = None
+        self.left = set()
         self._changed()
 
     # --- state ---------------------------------------------------------------
@@ -56,20 +145,47 @@ class Engine:
     def playing(self) -> bool:
         return self.game is not None and self.game.state()["status"] == "playing"
 
+    @property
+    def busy(self) -> bool:
+        """A lobby is open or a game is running: nobody else can start one."""
+        return self.lobby is not None or self.playing
+
+    def players(self) -> list[str]:
+        """Everyone who joined, in join order (index = player color)."""
+        if self.lobby:
+            return self.lobby.players
+        return self.game.players if self.game else []
+
+    def player_index(self, client_id: str) -> int | None:
+        """This client's player number, or None if they're not (or no
+        longer) playing."""
+        players = self.players()
+        if client_id not in players or client_id in self.left:
+            return None
+        return players.index(client_id)
+
     def session(self) -> dict[str, Any]:
+        if self.lobby:
+            info = self.lobby.cls.info
+            return {
+                "phase": "lobby",
+                "game": {"id": info.id, "name": info.name, "max_players": info.max_players},
+                "difficulty": self.lobby.difficulty,
+                "players": [{"color": c.name, "hex": c.ui} for c in info.player_colors[: len(self.lobby.players)]],
+            }
         if self.game is None:
             return {"phase": "idle"}
         state = self.game.state()
+        info = self.game.info
         return {
             "phase": "playing" if state["status"] == "playing" else "ended",
-            "game": {"id": self.game.info.id, "name": self.game.info.name},
+            "game": {"id": info.id, "name": info.name, "max_players": info.max_players},
             "difficulty": self.game.difficulty,
-            "owner": self.owner,
             "state": state,
         }
 
     def _changed(self) -> None:
-        state = self.session()
+        state = (self.session(), self.host, tuple(self.players()), frozenset(self.left))
         if state != self._last_state:
             self._last_state = state
             self.on_change()
@@ -87,8 +203,12 @@ class Engine:
             await asyncio.sleep(max(0.0, frame_time - (time.monotonic() - now)))
 
     def tick(self, dt: float) -> None:
+        self._t += dt
         game = self.game
-        if game is not None and not game.finished:
+        if self.lobby:
+            colors = self.lobby.cls.info.player_colors[: len(self.lobby.players)]
+            draw_lineup(self.pixels, [c.led for c in colors], self._t)
+        elif game is not None and not game.finished:
             game.update(dt)
             game.render(self.pixels)
         else:

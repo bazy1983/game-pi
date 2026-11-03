@@ -17,12 +17,36 @@ A colored snake creeps down from the top of the strip toward the white shooter
 |---|---|---|---|
 | Easy | 3 | 2.5 s | 100 |
 | Normal | 4 | 2.0 s | 150 |
-| Hard | 5 | 1.5 s | 200 |
-| Insane | 5 | 1.5 s | 250, snake shows white and flashes its colors for 0.3 s every 2 s |
+| Hard | 5 | 1.5 s | 200, spits poison |
+| Insane | 5 | 1.5 s | 250, spits poison; snake shows white and flashes its colors for 0.3 s every 2 s |
+
+**Poison (Hard and Insane):** every 5–10 s the snake spits a colored poison
+down at the shooter, a bit slower than a shot (2.5 s to cross the strip). A
+shot of the same color destroys it; other colors pass through each other. If
+the poison reaches the shooter, the shooter flashes the poison color and can't
+fire for 3 s.
 
 Fire mode: **Rapid fire** (no limit) or **Cooldown** (0.3 s between shots).
 
 Only one person plays at a time; anyone else who opens the page watches.
+
+### Fast Tap (1–6 players)
+One phone opens a lobby; anyone else on the Wi-Fi opens the page and taps
+**Join**. Each player gets a color (blue, yellow, magenta, cyan, white,
+orange) shown on the strip. The host starts the game.
+
+The strip flashes red at random moments, then green. The first player to tap
+during green wins the round (confetti in their color). Tapping at any other
+time knocks you out of that round. If nobody taps green, the flashes keep
+coming until someone wins the round or everyone is out.
+
+- 3 rounds; most round wins takes the game. Ties go to sudden-death rounds
+  between the leaders. The game ends early when nobody can catch the leader.
+- Solo: best of 3; lose 2 rounds and the strip fills red.
+- Easy: red flashes only, green lasts 0.5 s. Hard: fake flashes in other
+  colors, green lasts 0.3 s.
+- Fair over Wi-Fi: phones keep their clock in sync with the Pi and each tap
+  carries the time it happened, so a laggier connection doesn't lose.
 
 ## Run on your computer (simulator)
 
@@ -36,6 +60,9 @@ python3 -m venv .venv
 - Virtual strip: http://localhost:8080/sim
 
 Tests: `.venv/bin/python -m unittest`
+
+To test multiplayer from one computer, give each tab its own player with
+`?as=<name>`, e.g. http://localhost:8080/?as=1 and http://localhost:8080/?as=2.
 
 ## Options
 
@@ -88,7 +115,9 @@ Then open `http://<pi-hostname>.local` on your phone.
 ## Adding a game
 
 1. Create `ledgames/games/<name>.py` with a subclass of `Game` (see
-   `games/base.py`): `update(dt)`, `render(pixels)`, `on_input(action)`, `state()`.
+   `games/base.py`): `update(dt)`, `render(pixels)`, `on_input(player, action)`,
+   `state()`. Set `max_players` and `player_colors` in its `info` for a
+   multiplayer game; the engine handles the lobby.
 2. Register it in `ledgames/games/__init__.py`.
 
 The game list, difficulty and settings screens are generated from the game's

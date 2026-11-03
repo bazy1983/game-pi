@@ -20,26 +20,33 @@
     const info = document.getElementById("info");
     let n = 0;
 
+    // Each LED is a wide bar filling its whole slot (minus a hairline gap),
+    // so even with ~200 LEDs in one window-height column they're easy to see.
+    const STRIP_WIDTH = 50; // CSS px
+    const GLOW = 28;        // CSS px of glow on each side of the strip
+
     function draw(frame) {
-      const h = canvas.clientHeight * devicePixelRatio;
-      const pitch = h / n;
-      const w = Math.max(14, pitch * 3);
-      if (canvas.height !== Math.round(h) || canvas.width !== Math.round(w)) {
-        canvas.height = Math.round(h);
-        canvas.width = Math.round(w);
-        canvas.style.width = `${w / devicePixelRatio}px`;
+      const dpr = devicePixelRatio;
+      const h = Math.round(canvas.clientHeight * dpr);
+      const w = Math.round((STRIP_WIDTH + GLOW * 2) * dpr);
+      if (canvas.height !== h || canvas.width !== w) {
+        canvas.height = h;
+        canvas.width = w;
+        canvas.style.width = `${w / dpr}px`;
       }
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const r = Math.max(1, pitch * 0.42);
+      ctx.clearRect(0, 0, w, h);
+      const pitch = h / n;
+      const gap = pitch > 3 * dpr ? dpr : 0;
+      const x = GLOW * dpr;
+      const barW = STRIP_WIDTH * dpr;
       for (let i = 0; i < n; i++) {
         const [cr, cg, cb] = [frame[i * 3], frame[i * 3 + 1], frame[i * 3 + 2]];
-        const y = h - (i + 0.5) * pitch;
+        const y = h - (i + 1) * pitch;
         const lit = cr + cg + cb > 0;
-        ctx.fillStyle = lit ? `rgb(${cr},${cg},${cb})` : "#1a1d25";
-        if (lit) { ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = r * 3; } else { ctx.shadowBlur = 0; }
-        ctx.beginPath();
-        ctx.arc(w / 2, y, r, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillStyle = lit ? `rgb(${cr},${cg},${cb})` : "#161921";
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.shadowBlur = lit ? GLOW * dpr * 0.6 : 0;
+        ctx.fillRect(x, y + gap / 2, barW, pitch - gap);
       }
     }
 

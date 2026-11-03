@@ -3,12 +3,16 @@
 Protocol (JSON over /ws):
   client → server
     {"type": "hello", "clientId": "..."}
-    {"type": "start", "game": "color_shooter", "difficulty": "normal", "settings": {...}}
-    {"type": "input", "action": {"fire": "red"}}
-    {"type": "stop"}
+    {"type": "ping", "t0": <client ms>}            clock sync, any time
+    {"type": "start", "game": "...", "difficulty": "...", "settings": {...}, "again": bool}
+    {"type": "join"} / {"type": "leave"}           multiplayer lobby
+    {"type": "begin"}                              host starts the lobby's game
+    {"type": "input", "action": {...}}
+    {"type": "stop"}                               host quits
   server → client
-    {"type": "games", "games": [...]}           once, after hello
-    {"type": "session", "role": ..., ...}       whenever the session changes
+    {"type": "games", "games": [...]}              once, after hello
+    {"type": "session", "role", "you", "host", ...}  whenever the session changes
+    {"type": "pong", "t0": ..., "server": <s>}     server clock (time.monotonic)
     {"type": "error", "message": "..."}
 
 /ws/sim streams raw RGB frames (3 bytes per LED, bottom first) for the
@@ -17,6 +21,7 @@ simulator page.
 
 import asyncio
 import json
+import time
 import weakref
 from dataclasses import asdict
 from pathlib import Path
@@ -28,29 +33,36 @@ from .games import GAMES
 from .leds.sim import SimStrip
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
-ABANDON_AFTER = 30  # seconds the player can be disconnected before the game is stopped
+# A closed browser and a network blip look the same to the server, so a
+# player who disconnects is dropped only if they don't reconnect in time.
+# Long enough to survive a page reload.
+DROP_AFTER = 10
 
 
 class Server:
     def __init__(self, engine: Engine):
         self.engine = engine
         self.clients: dict[web.WebSocketResponse, str] = {}  # socket → client id
-        self.abandon_task: asyncio.Task | None = None
+        self.away: dict[str, asyncio.Task] = {}  # client id → pending abandon
+        self.last_players: list[str] = []  # for "Play again"
         engine.on_change = self.broadcast
 
     # --- messages --------------------------------------------------------------
 
     def session_for(self, client_id: str) -> dict:
         session = self.engine.session()
+        you = self.engine.player_index(client_id)
         if session["phase"] == "idle":
             role = "none"
-        elif session["owner"] == client_id:
+        elif you is not None:
             role = "player"
         else:
             role = "spectator"
-        return {"type": "session", "role": role, **session}
+        return {"type": "session", "role": role, "you": you, "host": client_id == self.engine.host, **session}
 
     def broadcast(self) -> None:
+        if self.engine.players():
+            self.last_players = list(self.engine.players())
         for ws, client_id in list(self.clients.items()):
             asyncio.ensure_future(self._send(ws, self.session_for(client_id)))
 
@@ -63,12 +75,15 @@ class Server:
 
     async def handle_message(self, ws: web.WebSocketResponse, msg: dict) -> None:
         kind = msg.get("type")
+        if kind == "ping":
+            await ws.send_json({"type": "pong", "t0": msg.get("t0"), "server": time.monotonic()})
+            return
         if kind == "hello":
             client_id = str(msg.get("clientId", ""))[:64]
             self.clients[ws] = client_id
-            if client_id == self.engine.owner and self.abandon_task:
-                self.abandon_task.cancel()  # the player came back
-                self.abandon_task = None
+            task = self.away.pop(client_id, None)
+            if task:
+                task.cancel()  # reconnected in time
             games = [asdict(cls.info) for cls in GAMES.values()]
             await ws.send_json({"type": "games", "games": games})
             await ws.send_json(self.session_for(client_id))
@@ -77,33 +92,45 @@ class Server:
         client_id = self.clients.get(ws)
         if client_id is None:
             return
+        engine = self.engine
+        error = None
         if kind == "start":
-            error = self.engine.start(
+            players = []
+            if msg.get("again"):
+                connected = set(self.clients.values())
+                players = [p for p in self.last_players if p in connected and p != client_id]
+            error = engine.open(
                 str(msg.get("game")),
                 str(msg.get("difficulty")),
                 {str(k): str(v) for k, v in (msg.get("settings") or {}).items()},
                 client_id,
+                players,
             )
-            if error:
-                await ws.send_json({"type": "error", "message": error})
+        elif kind == "join":
+            error = engine.join(client_id)
+        elif kind == "leave":
+            engine.drop(client_id)
+        elif kind == "begin":
+            engine.begin(client_id)
         elif kind == "input":
-            self.engine.input(client_id, msg.get("action") or {})
+            engine.input(client_id, msg.get("action") or {})
         elif kind == "stop":
-            # The player can quit; anyone can dismiss a finished game.
-            if client_id == self.engine.owner or not self.engine.playing:
-                self.engine.stop()
+            if client_id == engine.host or not engine.busy:
+                engine.stop()
+        if error:
+            await ws.send_json({"type": "error", "message": error})
 
     def on_disconnect(self, client_id: str) -> None:
-        if client_id != self.engine.owner or not self.engine.playing:
-            return
         if client_id in self.clients.values():
             return  # still connected from another tab
-        self.abandon_task = asyncio.ensure_future(self._abandon(client_id))
+        if self.engine.busy and self.engine.player_index(client_id) is not None:
+            self.away[client_id] = asyncio.ensure_future(self._drop_later(client_id))
 
-    async def _abandon(self, client_id: str) -> None:
-        await asyncio.sleep(ABANDON_AFTER)
-        if self.engine.owner == client_id and self.engine.playing:
-            self.engine.stop()
+    async def _drop_later(self, client_id: str) -> None:
+        await asyncio.sleep(DROP_AFTER)
+        self.away.pop(client_id, None)
+        if client_id not in self.clients.values():
+            self.engine.drop(client_id)
 
     # --- handlers --------------------------------------------------------------
 
