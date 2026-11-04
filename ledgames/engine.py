@@ -16,8 +16,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from .colors import OFF
+from .colors import OFF, RGB
 from .effects.lineup import draw_lineup
+from .effects.status import draw_flash, draw_status
 from .games import GAMES, Game
 
 
@@ -40,6 +41,9 @@ class Engine:
         self.host: str | None = None
         self.left: set[str] = set()  # players who dropped out of the running game
         self.on_change: Callable[[], None] = lambda: None
+        # Shown while no game is running: "setup", "connecting", "updating".
+        self.status: str | None = None
+        self._flash: tuple[RGB, float, float] | None = None  # color, time left, duration
         self._last_state: dict[str, Any] | None = None
         self._t = 0.0
 
@@ -132,6 +136,10 @@ class Engine:
         if self.playing and client_id in self.game.players and client_id not in self.left:
             self.game.on_input(client_id, action)
 
+    def flash(self, color: RGB, duration: float = 2.0) -> None:
+        """Light the whole strip briefly (when no game is running)."""
+        self._flash = (color, duration, duration)
+
     def stop(self) -> None:
         self.lobby = None
         self.game = None
@@ -144,6 +152,11 @@ class Engine:
     @property
     def playing(self) -> bool:
         return self.game is not None and self.game.state()["status"] == "playing"
+
+    @property
+    def idle(self) -> bool:
+        """Nothing open and no end-of-game animation playing."""
+        return self.lobby is None and (self.game is None or self.game.finished)
 
     @property
     def busy(self) -> bool:
@@ -211,6 +224,13 @@ class Engine:
         elif game is not None and not game.finished:
             game.update(dt)
             game.render(self.pixels)
+        elif self._flash:
+            color, left, duration = self._flash
+            left -= dt
+            self._flash = (color, left, duration) if left > 0 else None
+            draw_flash(self.pixels, color, left, duration)
+        elif self.status:
+            draw_status(self.pixels, self.status, self._t)
         else:
             for i in range(len(self.pixels)):
                 self.pixels[i] = OFF

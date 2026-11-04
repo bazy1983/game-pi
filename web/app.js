@@ -21,6 +21,11 @@ const SPECTATE_LINES = {
     ["Quick-draw in progress", "Nobody blink. You can join the next game."],
     ["Reflexes are being tested", "Red means wait, green means GO. Grab a seat 🍿"],
   ],
+  sumo: [
+    ["Sumo match on!", "Two colors, one strip. Who'll get pushed off? 👀"],
+    ["Push! Push! Push!", "Fingers are flying. Watch the strip!"],
+    ["Clash of colors", "Cheer for red or blue 🍿"],
+  ],
 };
 
 let ws = null;
@@ -112,8 +117,10 @@ function onSession(s) {
     sawPlaying = true;
     if (s.role !== "player") renderSpectate(s);
     else if (s.game.id === "fast_tap") renderTap(s);
+    else if (s.game.id === "sumo") renderSumo(s);
     else renderPlay(s.state);
   } else if (s.phase === "ended" && sawPlaying) {
+    if (wasPhase !== "ended") lockResult();
     renderResult(s);
   } else {
     sawPlaying = false;
@@ -393,6 +400,80 @@ $("tap-pad").addEventListener("pointerdown", (e) => {
   setTimeout(() => pad.classList.remove("pressed"), 100);
 });
 
+// --- sumo -----------------------------------------------------------------------
+
+function sumoName(st, i, you) {
+  if (st.players[i].cpu) return "Computer";
+  return i === you ? "You" : capitalize(st.players[i].color);
+}
+
+function renderTug(st, you) {
+  const [a, b] = st.players;
+  for (const [el, p] of [[$("tug-a"), a], [$("tug-b"), b]]) {
+    el.style.width = `${(100 * p.lights) / st.leds}%`;
+    el.style.background = p.hex;
+  }
+  $("tug-name-a").textContent = `${sumoName(st, 0, you)} · bottom`;
+  $("tug-name-b").textContent = `top · ${sumoName(st, 1, you)}`;
+}
+
+let sumoPadsKey = "";
+
+function renderSumo(s) {
+  show("sumo");
+  const st = s.state;
+  const me = st.players[s.you];
+  const other = st.players[1 - s.you];
+  $("sumo-quit").classList.toggle("hidden", !s.host);
+  $("sumo-label").textContent = st.solo ? `You vs the computer · ${s.difficulty}` : `You're ${me.color.toUpperCase()}`;
+  renderTug(st, s.you);
+
+  // One big pad, or numbered buttons to tap in order.
+  const pads = $("sumo-pads");
+  const key = `${st.buttons}/${me.hex}`;
+  if (key !== sumoPadsKey) {
+    sumoPadsKey = key;
+    pads.innerHTML = "";
+    pads.classList.toggle("many", st.buttons > 1);
+    for (let i = 0; i < st.buttons; i++) {
+      const b = document.createElement("button");
+      b.className = "pad";
+      b.style.background = me.hex;
+      b.innerHTML = `<span>${st.buttons > 1 ? i + 1 : "TAP!"}</span>`;
+      b.addEventListener("pointerdown", (e) => sumoTap(e, b, i));
+      pads.appendChild(b);
+    }
+  }
+  [...pads.children].forEach((b, i) => {
+    b.classList.toggle("next", i === me.next);
+    b.classList.toggle("dim", st.countdown > 0);
+  });
+
+  const msg = $("sumo-msg");
+  msg.classList.toggle("count", st.countdown > 0);
+  if (st.countdown > 0) {
+    msg.textContent = st.countdown;
+    const order = [...Array(st.buttons).keys()].map((i) => i + 1).join(" → ");
+    $("sumo-sub").textContent =
+      `You start at the ${s.you === 0 ? "bottom" : "top"}. ` +
+      (st.buttons > 1 ? `Tap ${order}, then again` : "Get ready…");
+  } else {
+    const ahead = me.lights - other.lights;
+    msg.textContent = st.buttons > 1 ? `Next: ${me.next + 1}` : "TAP! TAP! TAP!";
+    $("sumo-sub").textContent =
+      me.lights + other.lights < st.leds ? "Grab the strip!" : ahead > 0 ? "Push them off!" : ahead < 0 ? "Push back!" : "Dead even!";
+  }
+}
+
+function sumoTap(e, pad, button) {
+  e.preventDefault();
+  // Always send: the Pi decides whether it was the right button.
+  send({ type: "input", action: { tap: true, button } });
+  if (navigator.vibrate) navigator.vibrate(10);
+  pad.classList.add("pressed");
+  setTimeout(() => pad.classList.remove("pressed"), 80);
+}
+
 // --- spectate & result -------------------------------------------------------------
 
 function renderSpectate(s) {
@@ -407,6 +488,9 @@ function renderSpectate(s) {
     setScore($("spectate-score"), st.score);
     $("spectate-goal").textContent = st.goal;
     $("spectate-danger-bar").style.width = `${st.danger * 100}%`;
+  } else if (s.game.id === "sumo") {
+    const players = st.players.map((p, i) => ({ ...p, color: sumoName(st, i, null), wins: 0, active: true }));
+    renderBoard($("spectate-board"), { players, solo: false }, null);
   } else {
     renderBoard($("spectate-board"), { ...st, solo: false }, null);
   }
@@ -418,6 +502,19 @@ function renderResult(s) {
   const st = s.state;
   const won = st.status === "won";
   const mine = s.role === "player";
+  if (s.game.id === "sumo") {
+    const w = st.winner;
+    if (st.solo) {
+      $("result-emoji").textContent = won ? "🏆" : "🤖";
+      $("result-title").textContent = won ? (mine ? "You pushed it off!" : "The player won!") : "The computer won";
+    } else {
+      $("result-emoji").textContent = "🏆";
+      $("result-title").textContent = w === s.you ? "You win! 🎉" : `${capitalize(st.players[w].color)} wins!`;
+    }
+    const taps = st.players.map((p, i) => `${sumoName(st, i, mine ? s.you : null)} ${p.taps} taps`).join(" · ");
+    $("result-sub").textContent = st.forfeit ? "The other player left" : taps;
+    return;
+  }
   if (s.game.id === "fast_tap") {
     if (st.solo) {
       $("result-emoji").textContent = won ? "🎊" : "🐢";
@@ -437,6 +534,26 @@ function renderResult(s) {
   $("result-sub").textContent = `Final score: ${st.score} / ${st.goal} · ${s.difficulty}`;
 }
 
+// Players are still tapping when the game ends: keep the buttons off for a
+// moment so a late tap doesn't start a new game.
+const RESULT_LOCK = 5;
+
+function lockResult() {
+  const again = $("again-btn");
+  const home = $("home-btn");
+  clearInterval(lockResult.timer);
+  let left = RESULT_LOCK;
+  const tick = () => {
+    const locked = left > 0;
+    again.disabled = home.disabled = locked;
+    again.textContent = locked ? `Play again (${left})` : "Play again";
+    left--;
+    if (!locked) clearInterval(lockResult.timer);
+  };
+  tick();
+  lockResult.timer = setInterval(tick, 1000);
+}
+
 function toast(text) {
   const t = $("toast");
   t.textContent = text;
@@ -448,7 +565,7 @@ function toast(text) {
 // --- buttons -------------------------------------------------------------------
 
 $("start-btn").onclick = () => startGame(selectedGame);
-$("quit-btn").onclick = $("tap-quit").onclick = () => {
+$("quit-btn").onclick = $("tap-quit").onclick = $("sumo-quit").onclick = () => {
   if (confirm("Quit this game?")) send({ type: "stop" });
 };
 $("again-btn").onclick = () => {
@@ -464,6 +581,81 @@ for (const b of document.querySelectorAll("[data-nav]")) {
   b.onclick = () => {
     view = b.dataset.nav;
     show(view);
+    if (view === "device") pollDevice();
+  };
+}
+
+// --- invite --------------------------------------------------------------------
+
+for (const b of document.querySelectorAll(".invite-btn")) {
+  b.onclick = async () => {
+    $("invite-qr").src = `/invite.svg?t=${Date.now()}`;
+    $("invite-url").textContent = "";
+    $("invite").classList.remove("hidden");
+    try {
+      const r = await (await fetch("/api/invite")).json();
+      // The IP address works on every phone; also show the name if that's
+      // what this phone used.
+      $("invite-url").textContent = r.host_url !== r.url ? `${r.url}\nor ${r.host_url}` : r.url;
+    } catch (err) {}
+  };
+}
+$("invite-close").onclick = () => $("invite").classList.add("hidden");
+$("invite").onclick = (e) => {
+  if (e.target === $("invite")) $("invite").classList.add("hidden");
+};
+
+// --- device settings -------------------------------------------------------------
+
+const UPDATE_TEXT = {
+  off: () => "Updates are off on this unit (development install).",
+  idle: () => "Checks for updates automatically.",
+  checking: () => "Checking for updates…",
+  up_to_date: () => "You have the latest version.",
+  available: (u) => `Version ${u.latest} is available.` + (u.auto ? " It installs by itself when nobody is playing." : ""),
+  installing: (u) => `Installing ${u.latest}… the strip shows purple dots.`,
+  restarting: () => "Restarting with the new version…",
+  error: (u) => u.error || "Something went wrong.",
+};
+
+async function postJSON(url, body = {}) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await r.json().catch(() => ({}));
+  if (res.error) toast(res.error);
+  return res;
+}
+
+async function pollDevice() {
+  clearTimeout(pollDevice.timer);
+  if (view !== "device") return;
+  try {
+    renderDevice(await (await fetch("/api/device", { cache: "no-store" })).json());
+  } catch (err) {}
+  pollDevice.timer = setTimeout(pollDevice, 3000);
+}
+
+function renderDevice(d) {
+  $("device-name").textContent = d.name;
+  $("device-version").textContent = d.version;
+  $("device-wifi").textContent = d.wifi ? (d.wifi.ssid || (d.wifi.mode === "online" ? "Ethernet" : d.wifi.mode)) : "—";
+  $("device-address").textContent = d.local_url ? d.local_url.replace("http://", "") : location.host;
+  const u = d.update;
+  $("update-status").textContent = (UPDATE_TEXT[u.status] || UPDATE_TEXT.idle)(u);
+  const btn = $("update-btn");
+  btn.classList.toggle("hidden", u.status === "off");
+  btn.disabled = ["checking", "installing", "restarting"].includes(u.status);
+  if (u.status === "available") {
+    btn.textContent = `Install ${u.latest} now`;
+    btn.onclick = () => postJSON("/api/device/update", { action: "install" }).then(pollDevice);
+  } else {
+    btn.textContent = "Check for updates";
+    btn.onclick = () => postJSON("/api/device/update", { action: "check" }).then(pollDevice);
+  }
+  $("wifi-setup-btn").classList.toggle("hidden", !d.wifi);
+  $("wifi-setup-btn").onclick = async () => {
+    const msg = `${d.name} will leave this network. Then join the Wi-Fi network “${d.wifi.hotspot}” `
+      + "(password on the sticker) to pick a new one.\n\nIf nobody does, it goes back to this network in about 5 minutes.";
+    if (confirm(msg)) await postJSON("/api/device/wifi-setup");
   };
 }
 

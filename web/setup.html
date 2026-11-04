@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0d12">
+  <title>Wi-Fi setup</title>
+  <!-- Self-contained: phones show this page in a bare-bones sign-in window. -->
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; background: #0b0d12; color: #eef1f6; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 480px; margin: 0 auto; padding: 28px 20px 40px; }
+    h1 { font-size: 26px; margin: 0 0 6px; }
+    p { color: #8a93a6; line-height: 1.45; margin: 0 0 14px; }
+    p strong { color: #eef1f6; }
+    .hidden { display: none !important; }
+    .list { display: flex; flex-direction: column; gap: 8px; margin: 18px 0; }
+    .net { display: flex; align-items: center; gap: 12px; text-align: left; padding: 15px 16px; border-radius: 12px; background: #161a23; border: 2px solid transparent; font: inherit; color: inherit; font-size: 17px; cursor: pointer; }
+    .net.selected { border-color: #eef1f6; background: #1e2330; }
+    .net .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .net .meta { color: #8a93a6; font-size: 14px; white-space: nowrap; }
+    .bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+    .bars i { width: 4px; background: #39404f; border-radius: 1px; }
+    .bars i.on { background: #eef1f6; }
+    label { display: block; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #8a93a6; margin: 18px 0 8px; }
+    input { width: 100%; padding: 15px 16px; border-radius: 12px; border: 2px solid #2a303d; background: #161a23; color: #eef1f6; font: inherit; font-size: 17px; }
+    input:focus { outline: none; border-color: #eef1f6; }
+    .show { display: flex; align-items: center; gap: 8px; color: #8a93a6; font-size: 15px; margin-top: 10px; }
+    .show input { width: auto; }
+    button.primary { width: 100%; margin-top: 22px; padding: 17px; border-radius: 14px; border: 0; background: #eef1f6; color: #0b0d12; font: inherit; font-size: 18px; font-weight: 700; cursor: pointer; }
+    button.primary:disabled { opacity: .4; }
+    .error { background: #3a1216; color: #ffb3b8; padding: 13px 15px; border-radius: 12px; margin: 14px 0; line-height: 1.4; }
+    .url { display: block; background: #161a23; border-radius: 12px; padding: 15px; margin: 6px 0 16px; font-size: 18px; font-weight: 700; color: #eef1f6; word-break: break-all; text-decoration: none; }
+    .spinner { width: 46px; height: 46px; margin: 10px 0 20px; border: 4px solid #2a303d; border-top-color: #eef1f6; border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  </style>
+</head>
+<body>
+<main>
+  <!-- Pick a network -->
+  <section id="pick">
+    <h1 id="title">Set up Wi-Fi</h1>
+    <p>Choose the Wi-Fi network the game should join. Phones playing need to be on the same network.</p>
+    <div id="error" class="error hidden"></div>
+    <div id="networks" class="list"></div>
+    <form id="form" class="hidden" autocomplete="off">
+      <div id="ssid-box" class="hidden">
+        <label for="ssid">Network name</label>
+        <input id="ssid" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="32">
+      </div>
+      <div id="password-box">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="63">
+        <div class="show"><input id="show" type="checkbox"><span>Show password</span></div>
+      </div>
+      <button id="connect" class="primary" type="submit">Connect</button>
+    </form>
+  </section>
+
+  <!-- Joining -->
+  <section id="joining" class="hidden">
+    <div class="spinner"></div>
+    <h1>Connecting to <span id="joining-ssid"></span>…</h1>
+    <p>This phone will now leave the setup network. Switch it back to <strong id="joining-ssid2"></strong> if it doesn't do that by itself, then open:</p>
+    <a id="joining-url" class="url"></a>
+    <p><span class="dot" style="background:#22dd44"></span>The strip <strong>flashes green</strong> when it's connected.</p>
+    <p><span class="dot" style="background:#ff2a2a"></span>If it <strong>flashes red</strong>, the password was wrong. Join <strong id="joining-hotspot"></strong> again and this page will let you retry.</p>
+  </section>
+
+  <!-- Already online (page opened from the normal network) -->
+  <section id="online" class="hidden">
+    <h1>You're all set</h1>
+    <p id="online-text"></p>
+    <a href="/" class="url">Open the games</a>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let state = null;
+let chosen = null;   // {ssid, secure} or "other"
+let submitted = null;
+
+function show(id) {
+  for (const s of ["pick", "joining", "online"]) $(s).classList.toggle("hidden", s !== id);
+}
+
+function bars(signal) {
+  const n = signal > 75 ? 4 : signal > 50 ? 3 : signal > 25 ? 2 : 1;
+  let html = '<span class="bars">';
+  for (let i = 1; i <= 4; i++) html += `<i class="${i <= n ? "on" : ""}" style="height:${i * 25}%"></i>`;
+  return html + "</span>";
+}
+
+function render() {
+  if (submitted) {
+    $("joining-ssid").textContent = $("joining-ssid2").textContent = submitted;
+    $("joining-url").textContent = $("joining-url").href = state.local_url || "/";
+    $("joining-hotspot").textContent = `“${state.hotspot}”`;
+    show("joining");
+    return;
+  }
+  if (state.mode === "online" || state.mode === "starting") {
+    $("online-text").textContent = state.ssid ? `${state.name} is connected to ${state.ssid}.` : `${state.name} is online.`;
+    show("online");
+    return;
+  }
+  show("pick");
+  $("title").textContent = `Set up ${state.name}`;
+  $("error").textContent = state.error || "";
+  $("error").classList.toggle("hidden", !state.error);
+
+  const list = $("networks");
+  list.innerHTML = "";
+  for (const n of state.networks) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "net" + (chosen && chosen.ssid === n.ssid ? " selected" : "");
+    b.innerHTML = `<span class="name"></span><span class="meta">${n.secure ? "🔒 " : ""}${bars(n.signal)}</span>`;
+    b.firstChild.textContent = n.ssid;
+    b.onclick = () => choose(n);
+    list.appendChild(b);
+  }
+  const other = document.createElement("button");
+  other.type = "button";
+  other.className = "net" + (chosen === "other" ? " selected" : "");
+  other.innerHTML = '<span class="name">Other network…</span>';
+  other.onclick = () => choose("other");
+  list.appendChild(other);
+}
+
+function choose(n) {
+  chosen = n;
+  $("form").classList.remove("hidden");
+  $("ssid-box").classList.toggle("hidden", n !== "other");
+  $("password-box").classList.toggle("hidden", n !== "other" && !n.secure);
+  $("password").value = "";
+  render();
+  (n === "other" ? $("ssid") : $("password")).focus();
+}
+
+$("show").onchange = () => { $("password").type = $("show").checked ? "text" : "password"; };
+
+$("form").onsubmit = async (e) => {
+  e.preventDefault();
+  const ssid = chosen === "other" ? $("ssid").value.trim() : chosen.ssid;
+  const password = $("password").value;
+  if (!ssid) return;
+  $("connect").disabled = true;
+  try {
+    const r = await fetch("/api/setup/connect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ssid, password }),
+    });
+    const body = await r.json();
+    if (body.error) {
+      state.error = body.error;
+      render();
+      return;
+    }
+    submitted = ssid;
+    render();
+  } catch (err) {
+    submitted = ssid; // the hotspot went down under us: it's connecting
+    render();
+  } finally {
+    $("connect").disabled = false;
+  }
+};
+
+async function poll() {
+  try {
+    const r = await fetch("/api/setup", { cache: "no-store" });
+    const next = await r.json();
+    // Back on the hotspot after a failed attempt: offer to retry.
+    if (submitted && next.mode === "setup") submitted = null;
+    const first = !state;
+    state = next;
+    if (first || !$("form").contains(document.activeElement)) render();
+  } catch (err) {
+    // Unreachable while the unit switches networks.
+  }
+  setTimeout(poll, 3000);
+}
+poll();
+</script>
+</body>
+</html>

@@ -12,8 +12,29 @@
 
   <!-- Game list -->
   <section id="view-games" class="view">
-    <h1>LED Games</h1>
+    <header class="title-row">
+      <h1>LED Games</h1>
+      <button class="pill invite-btn">Invite</button>
+    </header>
     <div id="game-list" class="list"></div>
+    <button class="footer-link" data-nav="device">⚙︎ Device settings</button>
+  </section>
+
+  <!-- Device: network, version, updates -->
+  <section id="view-device" class="view hidden">
+    <button class="back" data-nav="games">‹ Games</button>
+    <h1 id="device-name">Device</h1>
+    <div class="rows">
+      <div class="row"><span>Version</span><span id="device-version"></span></div>
+      <div class="row"><span>Wi-Fi</span><span id="device-wifi"></span></div>
+      <div class="row"><span>Address</span><span id="device-address"></span></div>
+    </div>
+    <h2>Updates</h2>
+    <p id="update-status" class="muted"></p>
+    <button id="update-btn" class="secondary"></button>
+    <h2>Wi-Fi</h2>
+    <p class="muted">Moving the game to another network? It will start its setup network so you can pick a new one.</p>
+    <button id="wifi-setup-btn" class="secondary">Change Wi-Fi network</button>
   </section>
 
   <!-- Difficulty + settings -->
@@ -52,6 +73,7 @@
     <p id="lobby-sub" class="muted"></p>
     <div id="lobby-players" class="lobby-players"></div>
     <p id="lobby-hint" class="muted center"></p>
+    <button class="pill invite-btn center-pill">Invite friends</button>
     <button id="lobby-main" class="primary"></button>
     <button id="lobby-second" class="secondary"></button>
   </section>
@@ -66,6 +88,18 @@
       <button id="tap-quit" class="quit hidden">Quit</button>
     </header>
     <button id="tap-pad" class="pad"><span id="tap-msg"></span><small id="tap-sub"></small></button>
+  </section>
+
+  <!-- Sumo -->
+  <section id="view-sumo" class="view tap hidden">
+    <header class="hud">
+      <div class="label" id="sumo-label"></div>
+      <button id="sumo-quit" class="quit hidden">Quit</button>
+    </header>
+    <div class="tug"><div id="tug-a"></div><div id="tug-b"></div></div>
+    <div class="tug-names"><span id="tug-name-a"></span><span id="tug-name-b"></span></div>
+    <div class="sumo-msg"><span id="sumo-msg"></span><small id="sumo-sub"></small></div>
+    <div id="sumo-pads" class="pads"></div>
   </section>
 
   <!-- Someone else is playing -->
@@ -91,6 +125,17 @@
     <button id="again-btn" class="primary">Play again</button>
     <button id="home-btn" class="secondary">Back to games</button>
   </section>
+
+  <!-- Invite: QR code other phones scan to open this page -->
+  <div id="invite" class="modal hidden">
+    <div class="sheet">
+      <h1>Join the game</h1>
+      <p class="muted">Friends on the same Wi-Fi can scan this with their camera.</p>
+      <img id="invite-qr" class="qr" alt="QR code">
+      <div id="invite-url" class="invite-url"></div>
+      <button id="invite-close" class="primary">Done</button>
+    </div>
+  </div>
 
   <div id="toast" class="toast hidden"></div>
   <script src="/static/app.js"></script>

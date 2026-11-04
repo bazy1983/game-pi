@@ -1,20 +1,30 @@
 [Unit]
 Description=LED Games server
-After=network-online.target
-Wants=network-online.target
+After=NetworkManager.service
+# If a fresh update crashes before it has run healthily for a minute,
+# rollback.sh goes back to the previous release. Other crashes just restart.
+StartLimitIntervalSec=120
+StartLimitBurst=4
+OnFailure=ledgames-rollback.service
 
 [Service]
-# rpi_ws281x needs root for DMA/PWM access.
+# rpi_ws281x needs root for DMA/PWM access; Wi-Fi setup needs it for nmcli.
 User=root
-WorkingDirectory=/opt/ledgames
+WorkingDirectory=/opt/ledgames/current
 Environment=LED_BACKEND=ws281x
 Environment=LED_COUNT=195
 Environment=LED_BRIGHTNESS=0.5
 # Set to roughly 80% of your strip power supply's rating (e.g. 12A → 9600).
 Environment=LED_MAX_MA=9600
 Environment=PORT=80
+Environment=WIFI=nm
+Environment=UPDATES=auto
+Environment=LEDGAMES_STATE=/var/lib/ledgames
 ExecStart=/opt/ledgames/.venv/bin/python -m ledgames
+# If it stopped during Wi-Fi setup, give the Wi-Fi back to NetworkManager.
+ExecStopPost=-/usr/bin/nmcli dev set wlan0 managed yes
 Restart=on-failure
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target

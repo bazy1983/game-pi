@@ -48,6 +48,19 @@ coming until someone wins the round or everyone is out.
 - Fair over Wi-Fi: phones keep their clock in sync with the Pi and each tap
   carries the time it happened, so a laggier connection doesn't lose.
 
+### Sumo (1–2 players)
+A tapping tug-of-war. Red starts with the bottom quarter of the strip, blue
+with the top quarter, after a 3-second countdown. Every tap lights one more
+LED of your color. Once the colors meet, each tap pushes the other color back
+one LED. Push the other player off the strip (your color fills it) to win.
+
+- Two players: the host is red, the second phone is blue. If one leaves, the
+  other wins. Easy has one big button. Medium has buttons 1 and 2, and hard
+  has 1, 2 and 3: only the next button in the sequence (1, 2, 3, 1, 2, …)
+  lights an LED, so hammering one button does nothing.
+- Solo: you're red against the computer, which taps 3 times a second on easy,
+  5 on medium and 7 on hard.
+
 ## Run on your computer (simulator)
 
 ```sh
@@ -64,6 +77,10 @@ Tests: `.venv/bin/python -m unittest`
 To test multiplayer from one computer, give each tab its own player with
 `?as=<name>`, e.g. http://localhost:8080/?as=1 and http://localhost:8080/?as=2.
 
+To try the Wi-Fi setup flow, run with `--wifi fake`: after 3 seconds the
+simulator pretends it has no network and every page sends you to the setup
+page. "Home Wi-Fi" with the password `password123` is the network that works.
+
 ## Options
 
 Every option can be passed as a flag or an environment variable.
@@ -76,6 +93,10 @@ Every option can be passed as a flag or an environment variable.
 | `--brightness` | `LED_BRIGHTNESS` | 0.5 | global brightness 0–1 |
 | `--max-ma` | `LED_MAX_MA` | 0 | current budget in mA; frames are dimmed to stay under it (0 = off) |
 | `--port` | `PORT` | 8080 | |
+| `--wifi` | `WIFI` | `off` | Wi-Fi setup hotspot: `nm` (NetworkManager plus hostapd, on the Pi), `fake` (simulator), `off` |
+| `--updates` | `UPDATES` | `auto` | over-the-air updates: `auto`, `manual` (device page button) or `off` |
+| | `UPDATE_URL` | GitHub | where to look for releases (for testing) |
+| | `LEDGAMES_STATE` | `/var/lib/ledgames` | unit identity (`device.json`) |
 
 ## Hardware
 
@@ -98,19 +119,71 @@ Every option can be passed as a flag or an environment variable.
 
 ## Deploy to the Pi
 
+On a fresh Raspberry Pi OS Lite (Bookworm or newer, with NetworkManager), copy
+this project to the Pi and run the installer:
+
 ```sh
-# on the Pi (Raspberry Pi OS Lite)
-sudo apt install -y python3-venv git
-sudo mkdir -p /opt/ledgames && sudo chown $USER /opt/ledgames
-# copy this project to /opt/ledgames (git clone or rsync), then:
-cd /opt/ledgames
-python3 -m venv .venv
-.venv/bin/pip install -r requirements-pi.txt
-sudo cp deploy/ledgames.service /etc/systemd/system/
-sudo systemctl enable --now ledgames
+rsync -a --exclude .venv --exclude .git ./ pi@<pi>.local:ledgames-src/
+ssh pi@<pi>.local 'sudo sh ledgames-src/deploy/install.sh'
 ```
 
+It installs the packages, a Python environment in `/opt/ledgames/.venv`, the
+code as a release in `/opt/ledgames/releases/<version>` (with
+`/opt/ledgames/current` pointing at it) and the `ledgames` service. Run it
+again to deploy changes; `RELEASE_NAME=dev` installs them as `releases/dev`
+instead of under the version number.
+
 Then open `http://<pi-hostname>.local` on your phone.
+
+## Making a unit to sell
+
+1. Flash Raspberry Pi OS Lite, set the Wi-Fi country, and run the installer
+   (above).
+2. Give the unit its identity and print its sticker:
+   ```sh
+   cd /opt/ledgames/current
+   sudo /opt/ledgames/.venv/bin/python -m ledgames.provision --hostname --sticker ~/sticker.svg
+   ```
+   This renames the Pi to `ledgames` (so it's at http://ledgames.local) and
+   makes a random password for its setup hotspot `LED Games <ID>`, where the
+   ID comes from its serial number. The 70 × 35 mm
+   sticker has a QR code that joins the hotspot.
+3. Remove the factory Wi-Fi (`sudo nmcli con delete <name>`) so the unit
+   starts in setup mode for its buyer.
+
+### Wi-Fi setup
+
+With no network to join (45 s after boot, or 2 minutes after losing it), the
+unit starts its hotspot and the bottom of the strip breathes blue. A phone
+that joins it gets the setup page by itself; the customer picks their network
+and types the password. The strip flashes green when it's connected, red if
+the password was wrong (and the hotspot comes back). If nobody uses the setup
+page, the unit retries its saved networks every 5 minutes, so a router reboot
+doesn't strand it.
+
+The hotspot runs on hostapd and dnsmasq rather than NetworkManager's own
+hotspot mode: on the Pi Zero W's Wi-Fi chip, phones never complete the WPA2
+handshake with NetworkManager's. While it's up, NetworkManager lets go of
+`wlan0`.
+
+To move a unit to another network: Device settings → Change Wi-Fi network.
+
+### Updates
+
+Units check GitHub Releases every 6 hours and install new versions when
+nobody has played for 10 minutes (or from Device settings). A release is
+only installed if it's signed with the release key; if a new version crashes
+before running for a minute, the unit goes back to the previous one.
+
+To publish a release:
+
+1. Bump `__version__` in `ledgames/__init__.py`, commit and push.
+2. `.venv/bin/python tools/release.py --publish`
+
+The signing key is `~/.config/ledgames/release-key.pem` on the computer that
+made it. **Back it up**: units only accept releases signed with it. Updates
+carry code only; a version that needs new system packages has to be installed
+by hand.
 
 ## Adding a game
 

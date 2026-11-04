@@ -1,0 +1,6 @@
+[Unit]
+Description=Put LED Games back on the previous release
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ledgames/rollback.sh
