@@ -174,6 +174,12 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 .pads.many .pad.next { filter: none; box-shadow: inset 0 -10px 0 rgba(0, 0, 0, .25), 0 0 0 4px #eef1f6; }
 .pads .pad.pressed { filter: brightness(1.35); }
 
+/* --- simon says ------------------------------------------------------------ */
+
+.simon-buttons { flex: 1; display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.simon-buttons .tile { flex: 1; transition: transform .06s, filter .15s; }
+.simon-buttons.dim .tile { filter: brightness(.35); transform: none; }
+
 /* --- misc ---------------------------------------------------------------- */
 
 .conn {

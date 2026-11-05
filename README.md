@@ -61,6 +61,31 @@ one LED. Push the other player off the strip (your color fills it) to win.
 - Solo: you're red against the computer, which taps 3 times a second on easy,
   5 on medium and 7 on hard.
 
+### Simon Says (1–6 players)
+The strip plays a sequence of colors; repeat it with the color buttons on
+your phone. Each round adds one color. Reach the target length to win; solo,
+one mistake ends the game.
+
+| Difficulty | Colors | Strip | Target |
+|---|---|---|---|
+| Easy | 4 | one zone per color (dim, the step flashes bright) | 8 |
+| Normal | 4 | zones, faster playback | 12 |
+| Hard | 5 | whole strip flashes, buttons shuffle every round | 16 |
+
+Playback speeds up as the sequence grows. On easy and normal the phone's
+buttons are stacked in the same order as the zones (top button = top zone).
+
+With friends, pick a mode:
+- **All at once:** everyone repeats the same sequence on their own phone.
+  A mistake knocks you out. If everyone still in misses, nobody is out and the
+  round is replayed with a new last color. Presses don't show on the strip.
+- **Take turns:** no playback. On your turn, repeat the sequence from memory
+  and add a color of your own; every press lights the strip so the others can
+  learn it. A mistake knocks you out and the next player gets the same sequence.
+
+Last one standing wins; everyone still in at the target shares the win.
+Not pressing for 10 seconds counts as a mistake.
+
 ## Run on your computer (simulator)
 
 ```sh

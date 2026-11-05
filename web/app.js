@@ -26,6 +26,11 @@ const SPECTATE_LINES = {
     ["Push! Push! Push!", "Fingers are flying. Watch the strip!"],
     ["Clash of colors", "Cheer for red or blue 🍿"],
   ],
+  simon: [
+    ["Memory test in progress", "Shhh… they're counting colors. Watch the strip! 🧠"],
+    ["Simon is talking", "Can they remember it all? Watch and see."],
+    ["Brains at work", "Don't shout out the colors 🤫"],
+  ],
 };
 
 let ws = null;
@@ -118,6 +123,7 @@ function onSession(s) {
     if (s.role !== "player") renderSpectate(s);
     else if (s.game.id === "fast_tap") renderTap(s);
     else if (s.game.id === "sumo") renderSumo(s);
+    else if (s.game.id === "simon") renderSimon(s);
     else renderPlay(s.state);
   } else if (s.phase === "ended" && sawPlaying) {
     if (wasPhase !== "ended") lockResult();
@@ -246,7 +252,7 @@ function renderLobby(s) {
   second.classList.remove("hidden");
   if (s.host) {
     $("lobby-hint").textContent = s.players.length === 1
-      ? "Friends on the same Wi-Fi can open this page to join. Or start now to play solo (best of 3)."
+      ? `Friends on the same Wi-Fi can open this page to join. Or start now to play solo${s.game.id === "fast_tap" ? " (best of 3)" : ""}.`
       : "Everyone ready? Watch the strip, not your phone!";
     main.textContent = s.players.length === 1 ? "Play solo" : `Start with ${s.players.length} players`;
     main.onclick = () => send({ type: "begin" });
@@ -474,6 +480,103 @@ function sumoTap(e, pad, button) {
   setTimeout(() => pad.classList.remove("pressed"), 80);
 }
 
+// --- simon says ---------------------------------------------------------------
+
+function simonBoard(st) {
+  // In turns mode, only the player whose turn it is is highlighted.
+  const players = st.players.map((p, i) => ({ ...p, wins: 0, active: st.mode !== "turns" || i === st.turn }));
+  return { players, solo: st.mode === "solo" };
+}
+
+function simonNames(st, list, you) {
+  return list.map((i) => playerName(st.players, i, you)).join(", ");
+}
+
+let simonKey = "";
+
+function renderSimon(s) {
+  show("simon");
+  const st = s.state;
+  const me = st.players[s.you];
+  const turns = st.mode === "turns";
+  const myTurn = turns && st.turn === s.you;
+  $("simon-quit").classList.toggle("hidden", !s.host);
+  $("simon-label").textContent = turns
+    ? `${st.length} of ${st.target} colors · ${s.difficulty}`
+    : `Round ${st.length} of ${st.target} · ${s.difficulty}`;
+  renderBoard($("simon-board"), simonBoard(st), s.you);
+
+  // Rebuilt when the order changes (hard shuffles it every round).
+  const box = $("simon-buttons");
+  const key = st.buttons.map((b) => b.name).join();
+  if (key !== simonKey) {
+    simonKey = key;
+    box.innerHTML = "";
+    for (const b of st.buttons) {
+      const t = document.createElement("button");
+      t.className = "tile";
+      t.style.background = b.hex;
+      t.setAttribute("aria-label", b.name);
+      t.addEventListener("pointerdown", (e) => simonPress(e, t, b.name));
+      box.appendChild(t);
+    }
+  }
+  const canPress = st.stage === "input" && !me.out && (turns ? myTurn : !me.done && !me.failed);
+  box.classList.toggle("dim", !canPress);
+
+  let msg, sub;
+  const turnName = turns ? playerName(st.players, st.turn, s.you) : "";
+  if (st.stage === "intro") {
+    msg = "Get ready…";
+    sub = turns
+      ? (myTurn ? "You go first: pick a color" : `${turnName} goes first. Watch the strip!`)
+      : "Watch the strip, then repeat the colors";
+  } else if (st.stage === "show") {
+    [msg, sub] = ["Watch the strip!", `${st.length} color${st.length === 1 ? "" : "s"}`];
+  } else if (st.stage === "input") {
+    if (me.out) {
+      [msg, sub] = ["You're out", "Watch the others"];
+    } else if (turns) {
+      if (!myTurn) [msg, sub] = [`${turnName}'s turn`, "Watch the strip and remember"];
+      else if (st.length === 0) [msg, sub] = ["Pick the first color", "Anything you like"];
+      else if (st.entered < st.length) [msg, sub] = ["Your turn: repeat it", `${st.entered} of ${st.length}`];
+      else [msg, sub] = ["Now add a color!", "Pick any color to make it longer"];
+    } else if (me.failed) {
+      [msg, sub] = ["Oops!", "Waiting for the others…"];
+    } else if (me.done) {
+      [msg, sub] = ["Got it! ✓", "Waiting for the others…"];
+    } else {
+      [msg, sub] = ["Your turn!", `${me.progress} of ${st.length}`];
+    }
+  } else {
+    const last = st.last || { out: [] };
+    if (last.replay) {
+      [msg, sub] = ["Everyone missed!", "Same round again, new last color"];
+    } else if (last.out.includes(s.you)) {
+      [msg, sub] = ["Wrong! You're out", "Watch the others"];
+    } else if (last.out.length) {
+      [msg, sub] = [`${simonNames(st, last.out, s.you)} ${last.out.length === 1 ? "is" : "are"} out`, turns ? `${turnName}'s turn next` : "Next round: one more color"];
+    } else if (last.left !== undefined) {
+      [msg, sub] = [`${capitalize(st.players[last.left].color)} left`, `${turnName}'s turn next`];
+    } else if (turns) {
+      [msg, sub] = [last.added === s.you ? "Nice! ✓" : `${playerName(st.players, last.added, s.you)} added a color`, `${turnName}'s turn next`];
+    } else {
+      [msg, sub] = ["Correct! ✓", "Next round: one more color"];
+    }
+  }
+  $("simon-msg").textContent = msg;
+  $("simon-sub").textContent = sub;
+}
+
+function simonPress(e, tile, color) {
+  e.preventDefault();
+  if ($("simon-buttons").classList.contains("dim")) return;
+  send({ type: "input", action: { press: color } });
+  if (navigator.vibrate) navigator.vibrate(12);
+  tile.classList.add("pressed");
+  setTimeout(() => tile.classList.remove("pressed"), 120);
+}
+
 // --- spectate & result -------------------------------------------------------------
 
 function renderSpectate(s) {
@@ -482,9 +585,16 @@ function renderSpectate(s) {
   $("spectate-title").textContent = spectateLine[0];
   $("spectate-sub").textContent = spectateLine[1];
   const shooter = s.game.id === "color_shooter";
-  $("spectate-shooter").classList.toggle("hidden", !shooter);
+  const simon = s.game.id === "simon";
+  $("spectate-shooter").classList.toggle("hidden", !shooter && !simon);
   $("spectate-board").classList.toggle("hidden", shooter);
-  if (shooter) {
+  $("spectate-label").textContent = simon ? "Sequence" : "Score";
+  $("spectate-danger").classList.toggle("hidden", !shooter);
+  if (simon) {
+    setScore($("spectate-score"), st.length);
+    $("spectate-goal").textContent = st.target;
+    renderBoard($("spectate-board"), simonBoard(st), null);
+  } else if (shooter) {
     setScore($("spectate-score"), st.score);
     $("spectate-goal").textContent = st.goal;
     $("spectate-danger-bar").style.width = `${st.danger * 100}%`;
@@ -513,6 +623,25 @@ function renderResult(s) {
     }
     const taps = st.players.map((p, i) => `${sumoName(st, i, mine ? s.you : null)} ${p.taps} taps`).join(" · ");
     $("result-sub").textContent = st.forfeit ? "The other player left" : taps;
+    return;
+  }
+  if (s.game.id === "simon") {
+    const w = st.winners;
+    if (st.mode === "solo") {
+      $("result-emoji").textContent = won ? "🧠" : "🙊";
+      $("result-title").textContent = won ? (mine ? "You beat Simon!" : "They beat Simon!") : "Simon got you";
+      $("result-sub").textContent = won
+        ? `All ${st.target} colors · ${s.difficulty}`
+        : `Remembered ${st.reached} of ${st.target} · ${s.difficulty}`;
+    } else if (w.length === 1) {
+      $("result-emoji").textContent = "🏆";
+      $("result-title").textContent = w[0] === s.you ? "You win! 🎉" : `${capitalize(st.players[w[0]].color)} wins!`;
+      $("result-sub").textContent = `Last one standing · ${st.reached} colors`;
+    } else {
+      $("result-emoji").textContent = "🤝";
+      $("result-title").textContent = w.includes(s.you) ? "You share the win! 🎉" : "Shared win!";
+      $("result-sub").textContent = `${simonNames(st, w, s.you)} made it to ${st.target}`;
+    }
     return;
   }
   if (s.game.id === "fast_tap") {
@@ -565,7 +694,7 @@ function toast(text) {
 // --- buttons -------------------------------------------------------------------
 
 $("start-btn").onclick = () => startGame(selectedGame);
-$("quit-btn").onclick = $("tap-quit").onclick = $("sumo-quit").onclick = () => {
+$("quit-btn").onclick = $("tap-quit").onclick = $("sumo-quit").onclick = $("simon-quit").onclick = () => {
   if (confirm("Quit this game?")) send({ type: "stop" });
 };
 $("again-btn").onclick = () => {

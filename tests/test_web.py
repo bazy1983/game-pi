@@ -55,6 +55,14 @@ class WebTest(unittest.IsolatedAsyncioTestCase):
         r = await self.client.post("/api/setup/connect", data={"ssid": "Home", "password": "password123"})
         self.assertEqual(r.status, 415)
 
+    async def test_phones_revalidate_the_ui(self):
+        # Otherwise a phone keeps an old app.js after an update.
+        await self.start()
+        for path in ("/", "/static/app.js", "/static/style.css"):
+            r = await self.client.get(path)
+            self.assertEqual(r.status, 200, path)
+            self.assertEqual(r.headers.get("Cache-Control"), "no-cache", path)
+
     async def test_no_redirect_when_online(self):
         await self.start()
         r = await self.client.get("/", allow_redirects=False)

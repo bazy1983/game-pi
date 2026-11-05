@@ -102,6 +102,19 @@
     <div id="sumo-pads" class="pads"></div>
   </section>
 
+  <!-- Simon Says -->
+  <section id="view-simon" class="view tap hidden">
+    <header class="hud">
+      <div>
+        <div class="label" id="simon-label"></div>
+        <div id="simon-board" class="board"></div>
+      </div>
+      <button id="simon-quit" class="quit hidden">Quit</button>
+    </header>
+    <div class="sumo-msg"><span id="simon-msg"></span><small id="simon-sub"></small></div>
+    <div id="simon-buttons" class="simon-buttons"></div>
+  </section>
+
   <!-- Someone else is playing -->
   <section id="view-spectate" class="view spectate hidden">
     <div class="emoji">⚔️</div>
@@ -109,10 +122,10 @@
     <p id="spectate-sub" class="muted"></p>
     <div id="spectate-shooter">
       <div class="spectate-score">
-        <div class="label">Score</div>
+        <div class="label" id="spectate-label">Score</div>
         <div><span id="spectate-score" class="score">0</span><span class="goal"> / <span id="spectate-goal">0</span></span></div>
       </div>
-      <div class="danger"><div id="spectate-danger-bar"></div></div>
+      <div id="spectate-danger" class="danger"><div id="spectate-danger-bar"></div></div>
     </div>
     <div id="spectate-board" class="board center-board"></div>
   </section>

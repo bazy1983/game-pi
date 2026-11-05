@@ -324,7 +324,15 @@ def build_app(
             raise web.HTTPFound(setup_url)
         return await handler(request)
 
-    app = web.Application(middlewares=[captive_portal])
+    @web.middleware
+    async def revalidate(request: web.Request, handler):
+        # Phones would otherwise keep running an old app.js after an update.
+        response = await handler(request)
+        if request.path == "/" or request.path.startswith("/static/"):
+            response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
+    app = web.Application(middlewares=[captive_portal, revalidate])
     app["sockets"] = weakref.WeakSet()
     app["server"] = server
 
