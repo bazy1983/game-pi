@@ -15,8 +15,10 @@ class Strip:
         self.max_milliamps = max_milliamps  # 0 = no limit
         self._last: tuple[list[RGB], float] | None = None
 
-    def show(self, pixels: list[RGB]) -> None:
-        factor = self.brightness
+    def show(self, pixels: list[RGB], level: float = 1.0) -> None:
+        """`level` dims this frame on top of the brightness (the library
+        scales in C; much cheaper than scaling every pixel in Python)."""
+        factor = self.brightness * level
         if self.max_milliamps:
             total = sum(r + g + b for r, g, b in pixels)
             drawn = total / 255 * MA_PER_CHANNEL * factor + MA_IDLE * self.num_leds

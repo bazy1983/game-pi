@@ -26,6 +26,8 @@ HTTP (JSON):
   POST /api/device/wifi-setup  start the setup hotspot to change networks
   POST /api/device/leds        {"count": n}: set (and save) the number of LEDs
   POST /api/device/test-leds   play the wiring check pattern on the strip
+  GET  /api/lights             ambient lights settings, effects and palettes
+  POST /api/lights             change some of those settings (see lights.py)
   GET  /api/invite             {"url", "host_url"}: link other phones can open
   GET  /invite.svg             that link as a QR code
 
@@ -45,10 +47,12 @@ from aiohttp import WSMsgType, web
 from . import __version__, qr, trace
 from .colors import RGB
 from .device import PRODUCT, Device, load_settings, save_settings
+from .effects.ambient import EFFECTS
 from .engine import Engine
 from .games import GAMES
 from .leds import MAX_LEDS
 from .leds.sim import SimStrip
+from .lights import PALETTES, css_gradient
 from .updater import Updater
 from .wifi import Wifi
 
@@ -75,6 +79,7 @@ class Server:
         self.wifi = wifi
         self.updater = updater
         self.state_dir = state_dir  # where device page settings are saved (None: not saved)
+        self._save_lights: asyncio.TimerHandle | None = None
         self.clients: dict[web.WebSocketResponse, str] = {}  # socket → client id
         self.away: dict[str, asyncio.Task] = {}  # client id → pending abandon
         self.last_players: list[str] = []  # for "Play again"
@@ -313,6 +318,37 @@ class Server:
         error = self.engine.test_strip()
         return web.json_response({"error": error}, status=409 if error else 200)
 
+    def lights_state(self) -> dict:
+        lights = self.engine.lights
+        return {
+            **lights.settings(),
+            "effects": [{"id": k, "name": cls.name} for k, cls in EFFECTS.items()],
+            "palettes": [{"id": k, "name": p.name, "css": css_gradient(p, lights.color)} for k, p in PALETTES.items()],
+        }
+
+    async def lights_get(self, _: web.Request) -> web.Response:
+        return web.json_response(self.lights_state())
+
+    async def lights_post(self, request: web.Request) -> web.Response:
+        body = await _json_body(request)
+        error = self.engine.lights.update(body)
+        if error:
+            return web.json_response({"error": error}, status=400)
+        if self.state_dir:
+            # Sliders send a stream of changes; write the card once they stop.
+            if self._save_lights:
+                self._save_lights.cancel()
+            self._save_lights = asyncio.get_running_loop().call_later(2, self.save_lights)
+        return web.json_response({"error": None, **self.lights_state()})
+
+    def save_lights(self) -> None:
+        if self._save_lights:
+            self._save_lights.cancel()
+            self._save_lights = None
+        settings = load_settings(self.state_dir)
+        settings["lights"] = self.engine.lights.settings()
+        save_settings(settings, self.state_dir)
+
     def invite_urls(self, request: web.Request) -> dict:
         """The unit's address as the asking phone reached it. The IP address
         works on every phone; names ending in .local don't on some Androids."""
@@ -394,6 +430,8 @@ def build_app(
             app["tasks"].append(asyncio.create_task(updater.run(server.is_idle)))
 
     async def shutdown(app):
+        if server._save_lights:
+            server.save_lights()
         for task in app["tasks"]:
             task.cancel()
         for ws in set(app["sockets"]):
@@ -411,6 +449,8 @@ def build_app(
     app.router.add_post("/api/device/wifi-setup", server.device_wifi_setup)
     app.router.add_post("/api/device/leds", server.device_leds)
     app.router.add_post("/api/device/test-leds", server.device_test_leds)
+    app.router.add_get("/api/lights", server.lights_get)
+    app.router.add_post("/api/lights", server.lights_post)
     app.router.add_get("/api/invite", server.invite)
     app.router.add_get("/invite.svg", server.invite_qr)
     if isinstance(engine.strip, SimStrip):

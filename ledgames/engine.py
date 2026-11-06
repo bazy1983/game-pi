@@ -22,6 +22,7 @@ from .effects.lineup import draw_lineup
 from .effects.status import draw_flash, draw_status
 from .effects.strip_test import TEST_TIME, draw_test
 from .games import GAMES, Game
+from .lights import Lights
 
 
 @dataclass
@@ -47,6 +48,7 @@ class Engine:
         self.status: str | None = None
         self._flash: tuple[RGB, float, float] | None = None  # color, time left, duration
         self._test: float | None = None  # how far the strip test is
+        self.lights = Lights()  # ambient effect while no game is running
         self._last_state: dict[str, Any] | None = None
         self._t = 0.0
         self._shown = 0.0  # when the last frame started going to the strip (for the trace)
@@ -246,6 +248,7 @@ class Engine:
 
     def tick(self, dt: float) -> None:
         self._t += dt
+        level = 0.0  # the lights' brightness, if they're on the strip
         if self._test is not None:
             self._test += dt
             if self._test >= TEST_TIME:
@@ -266,9 +269,13 @@ class Engine:
             draw_flash(self.pixels, color, left, duration)
         elif self.status:
             draw_status(self.pixels, self.status, self._t)
+        elif self.lights.on:
+            level = self.lights.render(self.pixels, dt)
         else:
             for i in range(len(self.pixels)):
                 self.pixels[i] = OFF
+        if not level:
+            self.lights.pause()  # fades back in afterwards
         self._shown = time.monotonic()
-        self.strip.show(self.pixels)
+        self.strip.show(self.pixels, level or 1.0)
         self._changed()

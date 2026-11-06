@@ -16,8 +16,32 @@
       <h1>LED Games</h1>
       <button class="pill invite-btn">Invite</button>
     </header>
+    <button class="card lights-card" data-nav="lights">
+      <div class="title">✨ Lights</div>
+      <div class="desc">Ambient effects for when nobody's playing</div>
+    </button>
     <div id="game-list" class="list"></div>
     <button class="footer-link" data-nav="device">⚙︎ Device settings</button>
+  </section>
+
+  <!-- Lights: ambient effects while no game is running -->
+  <section id="view-lights" class="view hidden">
+    <button class="back" data-nav="games">‹ Games</button>
+    <h1>Lights</h1>
+    <p class="muted">Plays on the strip whenever nobody is playing. A game takes over, then the lights come back.</p>
+    <button id="lights-power" class="primary"></button>
+    <h2>Effect</h2>
+    <div id="lights-effects" class="grid"></div>
+    <h2>Colors</h2>
+    <div id="lights-palettes" class="swatches"></div>
+    <label id="lights-color-row" class="color-row hidden">
+      <span>Your color</span>
+      <input id="lights-color" type="color">
+    </label>
+    <h2>Speed</h2>
+    <input id="lights-speed" class="slider" type="range" min="0" max="1" step="0.01" aria-label="Speed">
+    <h2>Brightness</h2>
+    <input id="lights-level" class="slider" type="range" min="0.05" max="1" step="0.01" aria-label="Brightness">
   </section>
 
   <!-- Device: network, version, updates -->

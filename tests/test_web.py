@@ -121,6 +121,23 @@ class WebTest(unittest.IsolatedAsyncioTestCase):
         r = await self.client.post("/api/device/test-leds", json={})
         self.assertEqual(r.status, 200)
 
+    async def test_lights(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            await self.start(state_dir=Path(tmp))
+            body = await (await self.client.get("/api/lights")).json()
+            self.assertFalse(body["on"])
+            self.assertIn({"id": "fire", "name": "Fire"}, body["effects"])
+            self.assertTrue(any(p["id"] == "custom" for p in body["palettes"]))
+            r = await self.client.post("/api/lights", json={"on": True, "effect": "fire", "speed": 7})
+            self.assertEqual(r.status, 400)
+            self.assertFalse(self.engine.lights.on)
+            r = await self.client.post("/api/lights", json={"on": True, "effect": "fire"})
+            self.assertEqual(r.status, 200)
+            self.assertEqual((await r.json())["effect"], "fire")
+            self.assertTrue(self.engine.lights.on)
+            self.client.app["server"].save_lights()  # normally 2 s after the last change
+            self.assertEqual(load_settings(Path(tmp))["lights"]["effect"], "fire")
+
 
 if __name__ == "__main__":
     unittest.main()

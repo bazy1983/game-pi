@@ -47,12 +47,14 @@ def main() -> None:
     logging.getLogger("aiohttp.access").setLevel(logging.WARNING)  # phones poll; don't log every request
 
     state_dir = default_state_dir()
+    saved_settings = load_settings(state_dir)
     if args.leds is None:
-        saved = load_settings(state_dir).get("leds")
+        saved = saved_settings.get("leds")
         valid = isinstance(saved, int) and not isinstance(saved, bool) and 1 <= saved <= MAX_LEDS
         args.leds = saved if valid else int(env("LED_COUNT", 250))
     strip = make_strip(args.backend, args.leds, args.brightness, args.max_ma, args.pin)
     engine = Engine(strip, fps=args.fps)
+    engine.lights.load(saved_settings.get("lights", {}))
 
     device = wifi = None
     if args.wifi != "off":

@@ -790,6 +790,7 @@ for (const b of document.querySelectorAll("[data-nav]")) {
     view = b.dataset.nav;
     show(view);
     if (view === "device") pollDevice();
+    if (view === "lights") loadLights();
   };
 }
 
@@ -871,6 +872,75 @@ function renderDevice(d) {
     if (confirm(msg)) await postJSON("/api/device/wifi-setup");
   };
 }
+
+// --- lights --------------------------------------------------------------------
+
+let lights = null;      // settings plus the effect and palette lists, from /api/lights
+let lightsPending = {}; // changes not sent yet (sliders send at most ~8 times a second)
+let lightsTimer = null;
+
+async function loadLights() {
+  try {
+    lights = await (await fetch("/api/lights", { cache: "no-store" })).json();
+    renderLights();
+  } catch (err) {}
+}
+
+function setLights(changes) {
+  Object.assign(lights, changes);
+  Object.assign(lightsPending, changes);
+  renderLights();
+  if (!lightsTimer) lightsTimer = setTimeout(sendLights, 120);
+}
+
+async function sendLights() {
+  const body = lightsPending;
+  lightsPending = {};
+  let res = {};
+  try {
+    res = await postJSON("/api/lights", body);
+  } catch (err) {}
+  lightsTimer = null;
+  if (Object.keys(lightsPending).length) sendLights();
+  else if (res.error === null) { lights = res; renderLights(); } // e.g. the custom swatch's new color
+}
+
+function renderLights() {
+  if (!lights) return;
+  const power = $("lights-power");
+  power.textContent = lights.on ? "Turn off" : "Turn on";
+  power.className = lights.on ? "secondary" : "primary";
+
+  const fx = $("lights-effects");
+  fx.innerHTML = "";
+  for (const e of lights.effects) {
+    // Picking an effect turns the lights on.
+    fx.appendChild(card(e.name, "", lights.on && lights.effect === e.id, () => setLights({ effect: e.id, on: true })));
+  }
+
+  const pal = $("lights-palettes");
+  pal.innerHTML = "";
+  for (const p of lights.palettes) {
+    const b = document.createElement("button");
+    b.className = "swatch" + (lights.palette === p.id ? " selected" : "");
+    b.innerHTML = `<div class="bar"></div><span></span>`;
+    b.querySelector(".bar").style.background = p.id === "custom" ? lights.color : p.css;
+    b.querySelector("span").textContent = p.name;
+    b.onclick = () => setLights({ palette: p.id });
+    pal.appendChild(b);
+  }
+  $("lights-color-row").classList.toggle("hidden", lights.palette !== "custom");
+
+  // Don't move a slider (or the color) under the finger.
+  for (const [id, key] of [["lights-color", "color"], ["lights-speed", "speed"], ["lights-level", "level"]]) {
+    if (document.activeElement !== $(id)) $(id).value = lights[key];
+  }
+}
+
+$("lights-power").onclick = () => setLights({ on: !lights.on });
+$("lights-color").oninput = (e) => setLights({ color: e.target.value });
+$("lights-speed").oninput = (e) => setLights({ speed: Number(e.target.value) });
+$("lights-level").oninput = (e) => setLights({ level: Number(e.target.value) });
 
 $("leds-input").oninput = () => { $("leds-input").dataset.edited = "1"; };
 $("leds-save").onclick = async () => {

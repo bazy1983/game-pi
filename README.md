@@ -99,6 +99,25 @@ side scores; first to 5 wins.
 - Two players: the host is red, the second phone is blue. Solo: you're red
   and the computer returns 70% (easy), 80% (medium) or 93% (hard) of balls.
 
+## Lights
+
+Ambient effects that play on the strip whenever nobody is playing: ✨ Lights
+on the home screen. A game takes over the strip; when it's over, the lights
+fade back in. The choice is saved on the unit, so it survives a reboot.
+
+- Effects: Flow, Aurora, Fire (rises from the bottom), Twinkle, Meteor,
+  Ripples, Bouncing balls, Chase, Breathe, Still (the palette spread over the
+  strip; with one color, a solid color).
+- Colors: Rainbow, Fire, Ocean, Forest, Sunset, Party, Ice, or a color of
+  your own. Every effect works with every palette.
+- Speed (4× slower to 4× faster) and brightness (on top of the strip's own
+  brightness and current limit).
+
+To add an effect, write a class in `ledgames/effects/ambient.py` and add it to
+`EFFECTS`. The Pi Zero has about 33 ms per frame for everything: keep per-LED
+work in list comprehensions over precomputed tables (each effect takes
+1–6 ms for 250 LEDs).
+
 ## Run on your computer (simulator)
 
 ```sh
