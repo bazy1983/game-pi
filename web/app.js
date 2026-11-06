@@ -31,6 +31,11 @@ const SPECTATE_LINES = {
     ["Simon is talking", "Can they remember it all? Watch and see."],
     ["Brains at work", "Don't shout out the colors 🤫"],
   ],
+  ping_pong: [
+    ["Rally in progress!", "Back and forth, faster and faster. Watch the strip! 🏓"],
+    ["Ping… pong… ping…", "Don't blink, the ball speeds up."],
+    ["Match point?", "Grab a seat and cheer 🍿"],
+  ],
 };
 
 let ws = null;
@@ -52,13 +57,16 @@ let lastPoisonHits = 0;
 let clockSamples = [];
 let clockOffset = 0; // ms to add to performance.now() to get server time
 
+let lastRtt = null; // reported with the next ping, for the server's performance trace
+
 function ping() {
-  send({ type: "ping", t0: performance.now() });
+  send({ type: "ping", t0: performance.now(), rtt: lastRtt });
 }
 
 function onPong(msg) {
   const t1 = performance.now();
   const rtt = t1 - msg.t0;
+  lastRtt = Math.round(rtt);
   clockSamples.push({ rtt, offset: msg.server * 1000 + rtt / 2 - t1 });
   clockSamples = clockSamples.slice(-10);
   clockOffset = clockSamples.reduce((a, b) => (b.rtt < a.rtt ? b : a)).offset;
@@ -124,6 +132,7 @@ function onSession(s) {
     else if (s.game.id === "fast_tap") renderTap(s);
     else if (s.game.id === "sumo") renderSumo(s);
     else if (s.game.id === "simon") renderSimon(s);
+    else if (s.game.id === "ping_pong") renderPong(s);
     else renderPlay(s.state);
   } else if (s.phase === "ended" && sawPlaying) {
     if (wasPhase !== "ended") lockResult();
@@ -474,7 +483,7 @@ function renderSumo(s) {
 function sumoTap(e, pad, button) {
   e.preventDefault();
   // Always send: the Pi decides whether it was the right button.
-  send({ type: "input", action: { tap: true, button } });
+  send({ type: "input", action: { tap: true, button, at: serverNow() } });
   if (navigator.vibrate) navigator.vibrate(10);
   pad.classList.add("pressed");
   setTimeout(() => pad.classList.remove("pressed"), 80);
@@ -577,6 +586,63 @@ function simonPress(e, tile, color) {
   setTimeout(() => tile.classList.remove("pressed"), 120);
 }
 
+// --- ping pong ----------------------------------------------------------------
+
+function pongName(st, i, you) {
+  return sumoName(st, i, you);
+}
+
+function renderPongScore(st, you) {
+  const [a, b] = st.players;
+  $("pong-score-a").textContent = a.score;
+  $("pong-score-a").style.color = a.hex;
+  $("pong-score-b").textContent = b.score;
+  $("pong-score-b").style.color = b.hex;
+  $("pong-name-a").textContent = `${pongName(st, 0, you)} · bottom`;
+  $("pong-name-b").textContent = `${pongName(st, 1, you)} · top`;
+}
+
+function renderPong(s) {
+  show("pong");
+  const st = s.state;
+  const me = st.players[s.you];
+  $("pong-quit").classList.toggle("hidden", !s.host);
+  $("pong-label").textContent = st.solo
+    ? `You vs the computer · ${s.difficulty} · first to ${st.target}`
+    : `You're ${me.color.toUpperCase()} · first to ${st.target}`;
+  renderPongScore(st, s.you);
+  $("pong-pad").style.background = me.hex;
+
+  let msg, sub;
+  if (st.stage === "serve") {
+    if (st.last_point === null) {
+      [msg, sub] = ["Get ready…", `Your racket is at the ${s.you === 0 ? "bottom" : "top"}`];
+    } else {
+      msg = st.last_point === s.you ? "Point! 🎉" : `${pongName(st, st.last_point, s.you)} scores`;
+      sub = "Next serve coming…";
+    }
+  } else {
+    [msg, sub] = ["Watch the ball!", "Swing as it reaches your racket"];
+  }
+  $("pong-msg").textContent = msg;
+  $("pong-sub").textContent = sub;
+}
+
+let pongCoolUntil = 0;
+
+$("pong-pad").addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  const now = performance.now();
+  if (now < pongCoolUntil) return; // the Pi would ignore it anyway
+  const cooldown = (session.state && session.state.cooldown) || 0;
+  pongCoolUntil = now + cooldown * 1000;
+  send({ type: "input", action: { tap: true, at: serverNow() } });
+  if (navigator.vibrate) navigator.vibrate(12);
+  const pad = $("pong-pad");
+  pad.classList.add("cooling");
+  setTimeout(() => pad.classList.remove("cooling"), cooldown * 1000);
+});
+
 // --- spectate & result -------------------------------------------------------------
 
 function renderSpectate(s) {
@@ -598,8 +664,8 @@ function renderSpectate(s) {
     setScore($("spectate-score"), st.score);
     $("spectate-goal").textContent = st.goal;
     $("spectate-danger-bar").style.width = `${st.danger * 100}%`;
-  } else if (s.game.id === "sumo") {
-    const players = st.players.map((p, i) => ({ ...p, color: sumoName(st, i, null), wins: 0, active: true }));
+  } else if (s.game.id === "sumo" || s.game.id === "ping_pong") {
+    const players = st.players.map((p, i) => ({ ...p, color: sumoName(st, i, null), wins: p.score || 0, active: true }));
     renderBoard($("spectate-board"), { players, solo: false }, null);
   } else {
     renderBoard($("spectate-board"), { ...st, solo: false }, null);
@@ -623,6 +689,19 @@ function renderResult(s) {
     }
     const taps = st.players.map((p, i) => `${sumoName(st, i, mine ? s.you : null)} ${p.taps} taps`).join(" · ");
     $("result-sub").textContent = st.forfeit ? "The other player left" : taps;
+    return;
+  }
+  if (s.game.id === "ping_pong") {
+    const w = st.winner;
+    if (st.solo) {
+      $("result-emoji").textContent = won ? "🏓" : "🤖";
+      $("result-title").textContent = won ? (mine ? "You beat the computer!" : "The player won!") : "The computer won";
+    } else {
+      $("result-emoji").textContent = "🏆";
+      $("result-title").textContent = w === s.you ? "You win! 🎉" : `${capitalize(st.players[w].color)} wins!`;
+    }
+    const score = st.players.map((p, i) => `${pongName(st, i, mine ? s.you : null)} ${p.score}`).join(" · ");
+    $("result-sub").textContent = st.forfeit ? "The other player left" : score;
     return;
   }
   if (s.game.id === "simon") {
@@ -694,7 +773,7 @@ function toast(text) {
 // --- buttons -------------------------------------------------------------------
 
 $("start-btn").onclick = () => startGame(selectedGame);
-$("quit-btn").onclick = $("tap-quit").onclick = $("sumo-quit").onclick = $("simon-quit").onclick = () => {
+$("quit-btn").onclick = $("tap-quit").onclick = $("sumo-quit").onclick = $("simon-quit").onclick = $("pong-quit").onclick = () => {
   if (confirm("Quit this game?")) send({ type: "stop" });
 };
 $("again-btn").onclick = () => {
@@ -780,6 +859,11 @@ function renderDevice(d) {
     btn.textContent = "Check for updates";
     btn.onclick = () => postJSON("/api/device/update", { action: "check" }).then(pollDevice);
   }
+  const leds = $("leds-input");
+  leds.max = d.max_leds;
+  // Polling mustn't overwrite a number being typed.
+  if (document.activeElement !== leds && !leds.dataset.edited) leds.value = d.leds;
+  for (const id of ["leds-save", "leds-test"]) $(id).disabled = d.busy;
   $("wifi-setup-btn").classList.toggle("hidden", !d.wifi);
   $("wifi-setup-btn").onclick = async () => {
     const msg = `${d.name} will leave this network. Then join the Wi-Fi network “${d.wifi.hotspot}” `
@@ -787,5 +871,19 @@ function renderDevice(d) {
     if (confirm(msg)) await postJSON("/api/device/wifi-setup");
   };
 }
+
+$("leds-input").oninput = () => { $("leds-input").dataset.edited = "1"; };
+$("leds-save").onclick = async () => {
+  const input = $("leds-input");
+  const count = Number(input.value);
+  const res = await postJSON("/api/device/leds", { count });
+  if (res.error === null) {
+    delete input.dataset.edited;
+    input.blur();
+    toast(`Saved: ${count} LEDs. Watch the test on the strip.`);
+  }
+  pollDevice();
+};
+$("leds-test").onclick = () => postJSON("/api/device/test-leds");
 
 connect();

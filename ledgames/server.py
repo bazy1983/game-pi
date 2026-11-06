@@ -24,6 +24,8 @@ HTTP (JSON):
   GET  /api/device             name, version, network, update status
   POST /api/device/update      {"action": "check" | "install"}
   POST /api/device/wifi-setup  start the setup hotspot to change networks
+  POST /api/device/leds        {"count": n}: set (and save) the number of LEDs
+  POST /api/device/test-leds   play the wiring check pattern on the strip
   GET  /api/invite             {"url", "host_url"}: link other phones can open
   GET  /invite.svg             that link as a QR code
 
@@ -40,11 +42,12 @@ from pathlib import Path
 
 from aiohttp import WSMsgType, web
 
-from . import __version__, qr
+from . import __version__, qr, trace
 from .colors import RGB
-from .device import PRODUCT, Device
+from .device import PRODUCT, Device, load_settings, save_settings
 from .engine import Engine
 from .games import GAMES
+from .leds import MAX_LEDS
 from .leds.sim import SimStrip
 from .updater import Updater
 from .wifi import Wifi
@@ -65,11 +68,13 @@ class Server:
         device: Device | None = None,
         wifi: Wifi | None = None,
         updater: Updater | None = None,
+        state_dir: Path | None = None,
     ):
         self.engine = engine
         self.device = device
         self.wifi = wifi
         self.updater = updater
+        self.state_dir = state_dir  # where device page settings are saved (None: not saved)
         self.clients: dict[web.WebSocketResponse, str] = {}  # socket → client id
         self.away: dict[str, asyncio.Task] = {}  # client id → pending abandon
         self.last_players: list[str] = []  # for "Play again"
@@ -94,10 +99,13 @@ class Server:
         return {"type": "session", "role": role, "you": you, "host": client_id == self.engine.host, **session}
 
     def broadcast(self) -> None:
+        start = time.monotonic()
         if self.engine.players():
             self.last_players = list(self.engine.players())
         for ws, client_id in list(self.clients.items()):
             asyncio.ensure_future(self._send(ws, self.session_for(client_id)))
+        if trace.enabled:
+            trace.event("send", clients=len(self.clients), ms=round((time.monotonic() - start) * 1000, 1))
 
     @staticmethod
     async def _send(ws: web.WebSocketResponse, data: dict) -> None:
@@ -108,6 +116,9 @@ class Server:
 
     async def handle_message(self, ws: web.WebSocketResponse, msg: dict) -> None:
         kind = msg.get("type")
+        if trace.enabled and kind in ("input", "ping"):
+            action = msg.get("action") if isinstance(msg.get("action"), dict) else {}
+            trace.event("msg", type=kind, client=self.clients.get(ws), at=action.get("at"), rtt=msg.get("rtt"))
         if kind == "ping":
             await ws.send_json({"type": "pong", "t0": msg.get("t0"), "server": time.monotonic()})
             return
@@ -212,9 +223,12 @@ class Server:
         await ws.prepare(request)
         request.app["sockets"].add(ws)
         strip = self.engine.strip
-        await ws.send_json({"numLeds": strip.num_leds})
+        num_leds = None
         try:
             while not ws.closed:
+                if strip.num_leds != num_leds:  # also after a change on the device page
+                    num_leds = strip.num_leds
+                    await ws.send_json({"numLeds": num_leds})
                 await ws.send_bytes(strip.frame)
                 await asyncio.sleep(1 / self.engine.fps)
         except ConnectionError:
@@ -248,6 +262,8 @@ class Server:
                 "name": self.device_name(),
                 "local_url": self.device.local_url if self.device else None,
                 "version": __version__,
+                "leds": self.engine.strip.num_leds,
+                "max_leds": MAX_LEDS,
                 "wifi": {k: v for k, v in self.wifi.state().items() if k != "networks"} if self.wifi else None,
                 "update": self.updater.state() if self.updater else {"version": __version__, "status": "off"},
                 "busy": self.engine.busy,
@@ -275,6 +291,27 @@ class Server:
             return web.json_response({"error": "Wait until the game is over."}, status=409)
         error = self.wifi.enter_setup()
         return web.json_response({"error": error}, status=400 if error else 200)
+
+    async def device_leds(self, request: web.Request) -> web.Response:
+        body = await _json_body(request)
+        count = body.get("count")
+        if not isinstance(count, int) or isinstance(count, bool) or not 1 <= count <= MAX_LEDS:
+            return web.json_response({"error": f"Enter a number of LEDs from 1 to {MAX_LEDS}."}, status=400)
+        if count != self.engine.strip.num_leds:
+            error = self.engine.set_led_count(count)
+            if error:
+                return web.json_response({"error": error}, status=409)
+        if self.state_dir:
+            settings = load_settings(self.state_dir)
+            settings["leds"] = count
+            save_settings(settings, self.state_dir)
+        self.engine.test_strip()  # shows where the new end is
+        return web.json_response({"error": None})
+
+    async def device_test_leds(self, request: web.Request) -> web.Response:
+        await _json_body(request)
+        error = self.engine.test_strip()
+        return web.json_response({"error": error}, status=409 if error else 200)
 
     def invite_urls(self, request: web.Request) -> dict:
         """The unit's address as the asking phone reached it. The IP address
@@ -309,9 +346,13 @@ async def _json_body(request: web.Request) -> dict:
 
 
 def build_app(
-    engine: Engine, device: Device | None = None, wifi: Wifi | None = None, updater: Updater | None = None
+    engine: Engine,
+    device: Device | None = None,
+    wifi: Wifi | None = None,
+    updater: Updater | None = None,
+    state_dir: Path | None = None,
 ) -> web.Application:
-    server = Server(engine, device, wifi, updater)
+    server = Server(engine, device, wifi, updater, state_dir)
     # A real unit's hotspot sends phones to its own address; the simulator
     # stays on whatever address it was opened at.
     setup_url = wifi.hotspot.url if wifi else "/setup"
@@ -368,6 +409,8 @@ def build_app(
     app.router.add_get("/api/device", server.device_state)
     app.router.add_post("/api/device/update", server.device_update)
     app.router.add_post("/api/device/wifi-setup", server.device_wifi_setup)
+    app.router.add_post("/api/device/leds", server.device_leds)
+    app.router.add_post("/api/device/test-leds", server.device_test_leds)
     app.router.add_get("/api/invite", server.invite)
     app.router.add_get("/invite.svg", server.invite_qr)
     if isinstance(engine.strip, SimStrip):

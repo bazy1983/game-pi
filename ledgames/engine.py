@@ -16,9 +16,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from . import trace
 from .colors import OFF, RGB
 from .effects.lineup import draw_lineup
 from .effects.status import draw_flash, draw_status
+from .effects.strip_test import TEST_TIME, draw_test
 from .games import GAMES, Game
 
 
@@ -44,8 +46,10 @@ class Engine:
         # Shown while no game is running: "setup", "connecting", "updating".
         self.status: str | None = None
         self._flash: tuple[RGB, float, float] | None = None  # color, time left, duration
+        self._test: float | None = None  # how far the strip test is
         self._last_state: dict[str, Any] | None = None
         self._t = 0.0
+        self._shown = 0.0  # when the last frame started going to the strip (for the trace)
 
     # --- commands from the web server ---------------------------------------
 
@@ -71,6 +75,7 @@ class Engine:
         self.game = None
         self.host = host
         self.left = set()
+        self._test = None
         lobby = Lobby(cls, difficulty, clean, [host])
         if info.max_players == 1:
             self.lobby = lobby
@@ -139,6 +144,22 @@ class Engine:
     def flash(self, color: RGB, duration: float = 2.0) -> None:
         """Light the whole strip briefly (when no game is running)."""
         self._flash = (color, duration, duration)
+
+    def set_led_count(self, num_leds: int) -> str | None:
+        """Change the number of LEDs (from the device page). Returns an error
+        message, or None."""
+        if not self.idle:
+            return "Wait until the game is over."
+        self.strip.resize(num_leds)
+        self.pixels = [OFF] * num_leds
+        return None
+
+    def test_strip(self) -> str | None:
+        """Play the wiring check pattern. Returns an error message, or None."""
+        if not self.idle:
+            return "Wait until the game is over."
+        self._test = 0.0
+        return None
 
     def stop(self) -> None:
         self.lobby = None
@@ -211,12 +232,24 @@ class Engine:
         while True:
             now = time.monotonic()
             dt = min(now - last, 0.1)  # don't jump ahead after a stall
+            gap = now - last
             last = now
             self.tick(dt)
+            if trace.enabled:
+                trace.event(
+                    "frame",
+                    gap=round(gap * 1000, 1),
+                    work=round((self._shown - now) * 1000, 1),
+                    show=round((time.monotonic() - self._shown) * 1000, 1),
+                )
             await asyncio.sleep(max(0.0, frame_time - (time.monotonic() - now)))
 
     def tick(self, dt: float) -> None:
         self._t += dt
+        if self._test is not None:
+            self._test += dt
+            if self._test >= TEST_TIME:
+                self._test = None
         game = self.game
         if self.lobby:
             colors = self.lobby.cls.info.player_colors[: len(self.lobby.players)]
@@ -224,6 +257,8 @@ class Engine:
         elif game is not None and not game.finished:
             game.update(dt)
             game.render(self.pixels)
+        elif self._test is not None:
+            draw_test(self.pixels, self._test)
         elif self._flash:
             color, left, duration = self._flash
             left -= dt
@@ -234,5 +269,6 @@ class Engine:
         else:
             for i in range(len(self.pixels)):
                 self.pixels[i] = OFF
+        self._shown = time.monotonic()
         self.strip.show(self.pixels)
         self._changed()

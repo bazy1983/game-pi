@@ -180,6 +180,14 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 .simon-buttons .tile { flex: 1; transition: transform .06s, filter .15s; }
 .simon-buttons.dim .tile { filter: brightness(.35); transform: none; }
 
+/* --- ping pong ------------------------------------------------------------- */
+
+.pong-score { display: flex; justify-content: space-around; margin: 8px 0 4px; text-align: center; }
+.pong-score > div { display: flex; flex-direction: column; align-items: center; }
+.pong-score small { font-size: 14px; color: #8a93a6; }
+#pong-pad { margin-top: 12px; }
+#pong-pad.cooling { filter: brightness(.45); }
+
 /* --- misc ---------------------------------------------------------------- */
 
 .conn {
@@ -210,3 +218,11 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 .row + .row { border-top: 1px solid #222837; }
 .row span:first-child { color: #8a93a6; }
 .row span:last-child { text-align: right; word-break: break-all; }
+
+.leds-row { display: flex; gap: 10px; margin-top: 12px; }
+.leds-row input {
+  flex: 1; min-width: 0; padding: 0 18px; border-radius: 14px; border: 2px solid #2a303d;
+  background: #161a23; color: #eef1f6; font: inherit; font-size: 18px; font-weight: 700;
+}
+.leds-row input:focus { outline: none; border-color: #eef1f6; }
+.leds-row .secondary { margin-top: 0; padding: 18px 24px; }

@@ -82,3 +82,20 @@ def load_or_create(state_dir: Path | None = None, serial: str | None = None) -> 
     path.write_text(json.dumps(asdict(device), indent=2) + "\n")
     path.chmod(0o600)  # holds the hotspot password
     return device
+
+
+def load_settings(state_dir: Path | None = None) -> dict:
+    """Settings changed from the device page (e.g. {"leds": 195})."""
+    try:
+        settings = json.loads(((state_dir or default_state_dir()) / "settings.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    return settings if isinstance(settings, dict) else {}
+
+
+def save_settings(settings: dict, state_dir: Path | None = None) -> None:
+    path = (state_dir or default_state_dir()) / "settings.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(settings, indent=2) + "\n")
+    tmp.replace(path)  # a power cut mid-write doesn't lose the old settings

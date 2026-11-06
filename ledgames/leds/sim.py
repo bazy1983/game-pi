@@ -10,5 +10,9 @@ class SimStrip(Strip):
         super().__init__(num_leds, brightness=1.0)
         self.frame = bytes(num_leds * 3)
 
-    def write(self, pixels: list[RGB]) -> None:
-        self.frame = bytes(c for px in pixels for c in px)
+    def resize(self, num_leds: int) -> None:
+        super().resize(num_leds)
+        self.frame = bytes(num_leds * 3)
+
+    def write(self, pixels: list[RGB], factor: float) -> None:
+        self.frame = bytes(int(c * factor) for px in pixels for c in px)

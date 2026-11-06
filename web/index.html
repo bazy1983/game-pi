@@ -29,6 +29,13 @@
       <div class="row"><span>Wi-Fi</span><span id="device-wifi"></span></div>
       <div class="row"><span>Address</span><span id="device-address"></span></div>
     </div>
+    <h2>LED strip</h2>
+    <p class="muted">How many LEDs the strip has. Test plays a dot climbing to the top, red, green and blue, then blinks the first and last LED: the last one should be the top of the strip.</p>
+    <div class="leds-row">
+      <input id="leds-input" type="number" inputmode="numeric" min="1" step="1" aria-label="Number of LEDs">
+      <button id="leds-save" class="secondary">Save</button>
+    </div>
+    <button id="leds-test" class="secondary">Test LEDs</button>
     <h2>Updates</h2>
     <p id="update-status" class="muted"></p>
     <button id="update-btn" class="secondary"></button>
@@ -113,6 +120,20 @@
     </header>
     <div class="sumo-msg"><span id="simon-msg"></span><small id="simon-sub"></small></div>
     <div id="simon-buttons" class="simon-buttons"></div>
+  </section>
+
+  <!-- Ping Pong -->
+  <section id="view-pong" class="view tap hidden">
+    <header class="hud">
+      <div class="label" id="pong-label"></div>
+      <button id="pong-quit" class="quit hidden">Quit</button>
+    </header>
+    <div class="pong-score">
+      <div><span id="pong-score-a" class="score"></span><small id="pong-name-a"></small></div>
+      <div><span id="pong-score-b" class="score"></span><small id="pong-name-b"></small></div>
+    </div>
+    <div class="sumo-msg"><span id="pong-msg"></span><small id="pong-sub"></small></div>
+    <button id="pong-pad" class="pad"><span>SWING!</span></button>
   </section>
 
   <!-- Someone else is playing -->

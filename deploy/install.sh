@@ -22,6 +22,13 @@ systemctl mask -q hostapd
 rm -f /etc/NetworkManager/dnsmasq-shared.d/ledgames-captive.conf
 nmcli con delete ledgames-setup >/dev/null 2>&1 || true
 
+# Wi-Fi power saving holds packets for the Pi back by up to a second, so taps
+# arrive late and in bursts. Off for every connection (2 = disable), and
+# right away for the current one.
+mkdir -p /etc/NetworkManager/conf.d
+printf '[connection]\nwifi.powersave = 2\n' > /etc/NetworkManager/conf.d/ledgames-wifi.conf
+iw dev wlan0 set power_save off 2>/dev/null || true
+
 mkdir -p "$ROOT/releases" /var/lib/ledgames
 chmod 700 /var/lib/ledgames
 if [ ! -x "$ROOT/.venv/bin/python" ]; then

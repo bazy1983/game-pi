@@ -1,8 +1,10 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 from aiohttp.test_utils import TestClient, TestServer
 
-from ledgames.device import Device
+from ledgames.device import Device, load_settings
 from ledgames.engine import Engine
 from ledgames.leds import make_strip
 from ledgames.server import build_app
@@ -13,9 +15,9 @@ DEVICE = Device(id="93d5", hotspot_password="abcdefghjk")
 
 
 class WebTest(unittest.IsolatedAsyncioTestCase):
-    async def start(self, wifi: Wifi | None = None):
+    async def start(self, wifi: Wifi | None = None, state_dir: Path | None = None):
         self.engine = Engine(make_strip("sim", 50, 1.0, 0, 18))
-        self.client = TestClient(TestServer(build_app(self.engine, DEVICE if wifi else None, wifi)))
+        self.client = TestClient(TestServer(build_app(self.engine, DEVICE if wifi else None, wifi, None, state_dir)))
         await self.client.start_server()
 
     async def asyncTearDown(self):
@@ -93,6 +95,31 @@ class WebTest(unittest.IsolatedAsyncioTestCase):
         r = await self.client.post("/api/device/wifi-setup", json={})
         self.assertEqual(r.status, 409)
         self.assertEqual(wifi.mode, "online")
+
+    async def test_led_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            await self.start(state_dir=Path(tmp))
+            self.assertEqual((await (await self.client.get("/api/device")).json())["leds"], 50)
+            for bad in (0, 1001, "80", 80.5, True):
+                r = await self.client.post("/api/device/leds", json={"count": bad})
+                self.assertEqual(r.status, 400, bad)
+            r = await self.client.post("/api/device/leds", json={"count": 80})
+            self.assertEqual(r.status, 200)
+            self.assertEqual(self.engine.strip.num_leds, 80)
+            self.assertEqual(load_settings(Path(tmp)), {"leds": 80})
+            self.assertEqual((await (await self.client.get("/api/device")).json())["leds"], 80)
+
+    async def test_no_strip_changes_during_a_game(self):
+        await self.start()
+        self.engine.open("fast_tap", "easy", {}, "host")
+        r = await self.client.post("/api/device/leds", json={"count": 80})
+        self.assertEqual(r.status, 409)
+        self.assertEqual(self.engine.strip.num_leds, 50)
+        r = await self.client.post("/api/device/test-leds", json={})
+        self.assertEqual(r.status, 409)
+        self.engine.stop()
+        r = await self.client.post("/api/device/test-leds", json={})
+        self.assertEqual(r.status, 200)
 
 
 if __name__ == "__main__":

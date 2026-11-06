@@ -5,7 +5,7 @@ from ledgames.leds.base import Strip
 
 
 class NullStrip(Strip):
-    def write(self, pixels):
+    def write(self, pixels, factor):
         pass
 
 
@@ -117,6 +117,43 @@ class DropMidGameTest(unittest.TestCase):
             self.e.drop(p)
         self.assertEqual(self.e.session()["phase"], "ended")  # forfeit win for C first
         self.assertEqual(self.e.session()["state"]["winner"], 2)
+
+
+class StripSettingsTest(unittest.TestCase):
+    def setUp(self):
+        self.engine = Engine(NullStrip(50), clock=Clock())
+
+    def test_led_count_changes_when_idle(self):
+        self.assertIsNone(self.engine.set_led_count(80))
+        self.assertEqual(self.engine.strip.num_leds, 80)
+        self.engine.tick(0.1)
+        self.assertEqual(len(self.engine.pixels), 80)
+        self.engine.open("fast_tap", "easy", {}, "host")
+        self.assertIsNotNone(self.engine.set_led_count(60))
+        self.assertIsNotNone(self.engine.test_strip())
+        self.assertEqual(self.engine.strip.num_leds, 80)
+
+    def test_strip_test_plays_and_ends(self):
+        engine = self.engine
+        engine.test_strip()
+        engine.tick(0.1)
+        lit = [i for i, p in enumerate(engine.pixels) if p != (0, 0, 0)]
+        self.assertEqual(lit, [1])  # a dot near the bottom…
+        engine.tick(2.85)
+        self.assertEqual(engine.pixels[49], (255, 0, 0))  # …climbs to the top
+        engine.tick(0.6)
+        self.assertTrue(all(p == (255, 0, 0) for p in engine.pixels))  # then the whole strip
+        engine.tick(4.0)
+        self.assertEqual(engine.pixels[0], engine.pixels[-1])  # then the ends blink
+        engine.tick(3.0)
+        self.assertTrue(all(p == (0, 0, 0) for p in engine.pixels))
+
+    def test_a_game_cancels_the_test(self):
+        self.engine.test_strip()
+        self.engine.open("fast_tap", "easy", {}, "host")
+        self.engine.stop()
+        self.engine.tick(0.1)
+        self.assertTrue(all(p == (0, 0, 0) for p in self.engine.pixels))
 
 
 class SinglePlayerTest(unittest.TestCase):

@@ -86,6 +86,19 @@ With friends, pick a mode:
 Last one standing wins; everyone still in at the target shares the win.
 Not pressing for 10 seconds counts as a mistake.
 
+### Ping Pong (1–2 players)
+Red's racket is the bottom 3 LEDs, blue's the top 3; the ball is white with a
+fading trail. Tap to swing: the racket grows to 6 LEDs over 0.3 s and shrinks
+back over 0.3 s, and you can't swing again until it's back. The ball only
+bounces off a racket while it's growing. Let it past your end and the other
+side scores; first to 5 wins.
+
+- Each point starts at 100 LEDs per second, 10% faster every 10 hits.
+- After a point the strip flashes the scorer's color and shows the score as
+  dots at each end, then serves from the middle toward whoever lost it.
+- Two players: the host is red, the second phone is blue. Solo: you're red
+  and the computer returns 70% (easy), 80% (medium) or 93% (hard) of balls.
+
 ## Run on your computer (simulator)
 
 ```sh
@@ -112,7 +125,7 @@ Every option can be passed as a flag or an environment variable.
 
 | Flag | Env | Default | |
 |---|---|---|---|
-| `--leds` | `LED_COUNT` | 250 | number of LEDs |
+| `--leds` | `LED_COUNT` | 250 | number of LEDs; a count saved on the device page wins over `LED_COUNT` (not over `--leds`) |
 | `--backend` | `LED_BACKEND` | `sim` | `sim` or `ws281x` |
 | `--pin` | `LED_PIN` | 18 | GPIO data pin |
 | `--brightness` | `LED_BRIGHTNESS` | 0.5 | global brightness 0–1 |
@@ -121,7 +134,7 @@ Every option can be passed as a flag or an environment variable.
 | `--wifi` | `WIFI` | `off` | Wi-Fi setup hotspot: `nm` (NetworkManager plus hostapd, on the Pi), `fake` (simulator), `off` |
 | `--updates` | `UPDATES` | `auto` | over-the-air updates: `auto`, `manual` (device page button) or `off` |
 | | `UPDATE_URL` | GitHub | where to look for releases (for testing) |
-| | `LEDGAMES_STATE` | `/var/lib/ledgames` | unit identity (`device.json`) |
+| | `LEDGAMES_STATE` | `/var/lib/ledgames` | unit identity (`device.json`) and device page settings (`settings.json`) |
 
 ## Hardware
 
@@ -192,6 +205,15 @@ handshake with NetworkManager's. While it's up, NetworkManager lets go of
 `wlan0`.
 
 To move a unit to another network: Device settings → Change Wi-Fi network.
+
+### LED strip
+
+Device settings → LED strip sets how many LEDs the strip has (up to 1000);
+it's saved on the unit and takes effect right away. Saving, or tapping
+**Test LEDs**, plays a wiring check: a red dot climbs from the bottom to the
+top, the strip turns red, green and blue, then the first and last LEDs blink
+white. If the blinking LED isn't the top of the strip, the count is wrong.
+Neither works during a game.
 
 ### Updates
 
