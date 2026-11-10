@@ -180,6 +180,49 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 .simon-buttons .tile { flex: 1; transition: transform .06s, filter .15s; }
 .simon-buttons.dim .tile { filter: brightness(.35); transform: none; }
 
+/* --- morse code ----------------------------------------------------------- */
+
+.morse-slots { display: flex; justify-content: center; gap: 8px; margin: 4px 0 16px; }
+.morse-slots div {
+  width: 44px; height: 54px; border-radius: 10px; background: #161a23; border: 2px solid #2a3040;
+  display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 800;
+  transition: border-color .1s, background .1s;
+}
+.morse-slots div.playing { border-color: #eef1f6; background: #262c3a; }
+.morse-form { display: flex; gap: 10px; }
+.morse-form input {
+  flex: 1; min-width: 0; padding: 0 16px; border-radius: 14px; border: 2px solid #2a303d;
+  background: #161a23; color: #eef1f6; font: inherit; font-size: 22px; font-weight: 700;
+  letter-spacing: .15em; text-transform: uppercase;
+}
+.morse-form input:focus { outline: none; border-color: #eef1f6; }
+.morse-form input::placeholder { letter-spacing: normal; text-transform: none; font-weight: 400; font-size: 17px; }
+.morse-form .primary { margin-top: 0; padding: 16px 22px; }
+.morse-form.error input { border-color: #ff2a2a; animation: shake .35s; }
+@keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+.morse-chart { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 20px; }
+.morse-chart div { display: flex; justify-content: space-between; gap: 4px; padding: 7px 8px; border-radius: 8px; background: #161a23; font-size: 15px; }
+.morse-chart b { font-weight: 800; }
+.morse-chart span { color: #c4cad6; font-weight: 800; letter-spacing: .08em; white-space: nowrap; }
+
+/* --- red light, green light ---------------------------------------------- */
+
+.rl-lanes { display: flex; flex-direction: column; gap: 8px; }
+.rl-lane { display: grid; grid-template-columns: 84px 1fr; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; color: #8a93a6; }
+.rl-lane.you { color: #eef1f6; }
+.rl-lane .track { height: 14px; border-radius: 7px; background: #161a23; overflow: hidden; }
+.rl-lane .fill { height: 100%; border-radius: 7px; transition: width .15s linear; }
+.rl-lane.caught .fill { animation: blink .3s steps(2) infinite; }
+.rl-lane.left { opacity: .35; }
+@keyframes blink { 50% { opacity: .2; } }
+.rl-pad { margin-top: 12px; touch-action: none; -webkit-touch-callout: none; transition: background .1s, filter .1s; }
+.rl-pad.green { background: #22dd44; }
+.rl-pad.yellow { background: #ffd21f; }
+.rl-pad.red { background: #ff2a2a; }
+.rl-pad.holding { filter: brightness(1.25); box-shadow: inset 0 6px 0 rgba(0, 0, 0, .25); }
+.rl-pad.caught { filter: grayscale(.8) brightness(.5); color: #eef1f6; }
+.rl-pad span { font-size: 40px; }
+
 /* --- ping pong ------------------------------------------------------------- */
 
 .pong-score { display: flex; justify-content: space-around; margin: 8px 0 4px; text-align: center; }

@@ -146,6 +146,36 @@
     <div id="simon-buttons" class="simon-buttons"></div>
   </section>
 
+  <!-- Morse Code -->
+  <section id="view-morse" class="view morse hidden">
+    <header class="hud">
+      <div>
+        <div class="label" id="morse-label"></div>
+        <div id="morse-board" class="board"></div>
+      </div>
+      <button id="morse-quit" class="quit hidden">Quit</button>
+    </header>
+    <div class="sumo-msg"><span id="morse-msg"></span><small id="morse-sub"></small></div>
+    <div id="morse-slots" class="morse-slots"></div>
+    <form id="morse-form" class="morse-form" autocomplete="off">
+      <input id="morse-input" type="text" inputmode="text" autocapitalize="characters" autocorrect="off"
+        spellcheck="false" enterkeyhint="send" aria-label="Your guess" placeholder="Type the word">
+      <button id="morse-submit" class="primary" type="submit">Guess</button>
+    </form>
+    <div id="morse-chart" class="morse-chart"></div>
+  </section>
+
+  <!-- Red Light, Green Light -->
+  <section id="view-rl" class="view tap hidden">
+    <header class="hud">
+      <div class="label" id="rl-label"></div>
+      <button id="rl-quit" class="quit hidden">Quit</button>
+    </header>
+    <div id="rl-lanes" class="rl-lanes"></div>
+    <div class="sumo-msg"><span id="rl-msg"></span><small id="rl-sub"></small></div>
+    <button id="rl-pad" class="pad rl-pad"><span id="rl-pad-text"></span></button>
+  </section>
+
   <!-- Ping Pong -->
   <section id="view-pong" class="view tap hidden">
     <header class="hud">

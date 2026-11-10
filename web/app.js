@@ -31,6 +31,16 @@ const SPECTATE_LINES = {
     ["Simon is talking", "Can they remember it all? Watch and see."],
     ["Brains at work", "Don't shout out the colors 🤫"],
   ],
+  morse: [
+    ["Decoding in progress", "Dots and dashes everywhere. Can they read it? 📡"],
+    ["Beep… beeeep… beep", "Someone is reading the strip. Try it yourself!"],
+    ["Secret message!", "Watch the strip: short and long flashes spell a word 🕵️"],
+  ],
+  red_light: [
+    ["Race in progress!", "Green means go, red means FREEZE. Watch the strip! 🚦"],
+    ["Don't move!", "Someone's about to get caught. Grab a seat 🍿"],
+    ["Who's creeping up?", "Watch the dots climb the strip 👀"],
+  ],
   ping_pong: [
     ["Rally in progress!", "Back and forth, faster and faster. Watch the strip! 🏓"],
     ["Ping… pong… ping…", "Don't blink, the ball speeds up."],
@@ -126,6 +136,8 @@ function onSession(s) {
     if (wasPhase !== "playing") {
       const lines = SPECTATE_LINES[s.game.id] || SPECTATE_LINES.color_shooter;
       spectateLine = lines[Math.floor(Math.random() * lines.length)];
+      morseReset();
+      rlHolding = false;
     }
     sawPlaying = true;
     if (s.role !== "player") renderSpectate(s);
@@ -133,6 +145,8 @@ function onSession(s) {
     else if (s.game.id === "sumo") renderSumo(s);
     else if (s.game.id === "simon") renderSimon(s);
     else if (s.game.id === "ping_pong") renderPong(s);
+    else if (s.game.id === "morse") renderMorse(s);
+    else if (s.game.id === "red_light") renderRedLight(s);
     else renderPlay(s.state);
   } else if (s.phase === "ended" && sawPlaying) {
     if (wasPhase !== "ended") lockResult();
@@ -586,6 +600,186 @@ function simonPress(e, tile, color) {
   setTimeout(() => tile.classList.remove("pressed"), 120);
 }
 
+// --- morse code ---------------------------------------------------------------
+
+const MORSE = {
+  A: ".-", B: "-...", C: "-.-.", D: "-..", E: ".", F: "..-.", G: "--.", H: "....", I: "..", J: ".---",
+  K: "-.-", L: ".-..", M: "--", N: "-.", O: "---", P: ".--.", Q: "--.-", R: ".-.", S: "...", T: "-",
+  U: "..-", V: "...-", W: ".--", X: "-..-", Y: "-.--", Z: "--..",
+};
+
+let morseWrong = 0;     // my wrong guesses so far, to notice a new one
+let morseErrorUntil = 0;
+
+function morseReset() {
+  morseWrong = 0;
+  morseErrorUntil = 0;
+  $("morse-input").value = "";
+}
+
+(function buildMorseChart() {
+  const chart = $("morse-chart");
+  for (const [letter, code] of Object.entries(MORSE)) {
+    const d = document.createElement("div");
+    d.innerHTML = `<b>${letter}</b><span>${code.replaceAll(".", "·").replaceAll("-", "–")}</span>`;
+    chart.appendChild(d);
+  }
+})();
+
+function renderMorse(s) {
+  show("morse");
+  const st = s.state;
+  const me = st.players[s.you];
+  $("morse-quit").classList.toggle("hidden", !s.host);
+  $("morse-label").textContent = `${st.length} letters · ${s.difficulty}`;
+  renderBoard($("morse-board"), { players: st.players.map((p) => ({ ...p, wins: 0, active: true })), solo: st.solo }, s.you);
+
+  if (me.wrong > morseWrong) { // the Pi said my last guess was wrong
+    morseWrong = me.wrong;
+    morseErrorUntil = performance.now() + 2500;
+    const form = $("morse-form");
+    form.classList.remove("error");
+    void form.offsetWidth; // restart the shake
+    form.classList.add("error");
+    $("morse-input").select();
+    if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+    setTimeout(() => {
+      if (session.phase === "playing" && session.game.id === "morse" && session.role === "player") renderMorse(session);
+    }, 2600); // clear the error
+  }
+
+  const input = $("morse-input");
+  input.maxLength = st.length;
+  input.disabled = me.out;
+  renderMorseSlots(st);
+  $("morse-submit").disabled = me.out || st.stage === "intro" || input.value.length !== st.length;
+
+  const guesses = `${me.attempts} guess${me.attempts === 1 ? "" : "es"} left`;
+  let msg, sub;
+  if (performance.now() < morseErrorUntil) {
+    [msg, sub] = me.out ? ["Wrong! You're out", "Out of guesses. Watch the others"] : ["Wrong!", guesses];
+  } else if (me.out) {
+    [msg, sub] = ["Out of guesses", "Watch the others"];
+  } else if (st.stage === "intro") {
+    [msg, sub] = ["Get ready…", "Short flash = dot, long flash = dash"];
+  } else if (st.stage === "last") {
+    [msg, sub] = [`Last chance: ${st.last_chance}`, `The strip won't play it again · ${guesses}`];
+  } else {
+    const play = st.plays ? `Play ${st.play} of ${st.plays}` : `Play ${st.play}`;
+    msg = st.letter === null ? "End of word" : `Letter ${st.letter + 1} of ${st.length}`;
+    sub = `${play} · ${guesses}`;
+  }
+  $("morse-msg").textContent = msg;
+  $("morse-sub").textContent = sub;
+}
+
+function renderMorseSlots(st) {
+  const box = $("morse-slots");
+  const typed = $("morse-input").value;
+  if (box.children.length !== st.length) {
+    box.innerHTML = "";
+    for (let i = 0; i < st.length; i++) box.appendChild(document.createElement("div"));
+  }
+  [...box.children].forEach((d, i) => {
+    d.textContent = typed[i] || "";
+    d.classList.toggle("playing", st.stage === "play" && st.letter === i);
+  });
+}
+
+$("morse-input").addEventListener("input", (e) => {
+  const st = session.state;
+  e.target.value = e.target.value.replace(/[^a-z]/gi, "").toUpperCase().slice(0, st ? st.length : 6);
+  if (session.game && session.game.id === "morse" && st) {
+    renderMorseSlots(st);
+    $("morse-submit").disabled = e.target.value.length !== st.length || st.stage === "intro";
+  }
+});
+
+$("morse-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const st = session.state;
+  const guess = $("morse-input").value;
+  if (!st || guess.length !== st.length || st.stage === "intro") return;
+  send({ type: "input", action: { guess } });
+});
+
+// --- red light, green light ------------------------------------------------------
+
+let rlHolding = false;
+
+function rlName(st, i, you) {
+  return sumoName(st, i, you);
+}
+
+function renderRedLight(s) {
+  show("rl");
+  const st = s.state;
+  const me = st.players[s.you];
+  $("rl-quit").classList.toggle("hidden", !s.host);
+  const mode = st.mode === "clock" ? "Beat the clock" : st.mode === "computer" ? "vs the computer" : `${st.players.length} players`;
+  $("rl-label").textContent = `${mode} · ${s.difficulty}`;
+
+  const lanes = $("rl-lanes");
+  if (lanes.children.length !== st.players.length) {
+    lanes.innerHTML = "";
+    for (const _ of st.players) {
+      const lane = document.createElement("div");
+      lane.className = "rl-lane";
+      lane.innerHTML = `<span></span><div class="track"><div class="fill"></div></div>`;
+      lanes.appendChild(lane);
+    }
+  }
+  st.players.forEach((p, i) => {
+    const lane = lanes.children[i];
+    lane.className = "rl-lane" + (i === s.you ? " you" : "") + (p.caught ? " caught" : "") + (p.left ? " left" : "");
+    lane.querySelector("span").textContent = rlName(st, i, s.you) + (p.left ? " · left" : "");
+    const fill = lane.querySelector(".fill");
+    fill.style.width = `${Math.max(2, p.progress)}%`;
+    fill.style.background = p.hex;
+  });
+
+  const pad = $("rl-pad");
+  pad.className = `pad rl-pad ${st.light}` + (rlHolding ? " holding" : "") + (me.caught ? " caught" : "");
+  let text, msg, sub;
+  if (st.stage === "countdown") {
+    [text, msg, sub] = [st.countdown, "Get ready…", "Hold the button to climb, let go on red"];
+  } else if (me.caught) {
+    [text, msg, sub] = ["CAUGHT!", "You moved on red", "Wait for green"];
+  } else if (st.light === "red") {
+    [text, msg, sub] = ["STOP!", "Red light!", "Don't move"];
+  } else if (st.light === "yellow") {
+    [text, msg, sub] = ["SLOW…", "Yellow!", "Red is coming"];
+  } else {
+    [text, msg, sub] = [rlHolding ? "GO! GO!" : "HOLD", "Green light!", "Hold to climb"];
+  }
+  if (st.time_left !== null && st.stage === "race") sub = `${st.time_left} s left`;
+  $("rl-pad-text").textContent = text;
+  $("rl-msg").textContent = msg;
+  $("rl-sub").textContent = sub;
+}
+
+function rlHold(hold) {
+  if (hold === rlHolding) return;
+  rlHolding = hold;
+  send({ type: "input", action: { hold, at: serverNow() } });
+  if (hold && navigator.vibrate) navigator.vibrate(10);
+  if (session.phase === "playing" && session.game.id === "red_light" && session.role === "player") renderRedLight(session);
+}
+
+{
+  const pad = $("rl-pad");
+  pad.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    pad.setPointerCapture(e.pointerId); // keep holding even if the finger slides off
+    rlHold(true);
+  });
+  for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) pad.addEventListener(ev, () => rlHold(false));
+  pad.addEventListener("contextmenu", (e) => e.preventDefault()); // long press
+  // Switching apps or locking the phone lets go.
+  document.addEventListener("visibilitychange", () => { if (document.hidden) rlHold(false); });
+  window.addEventListener("blur", () => rlHold(false));
+}
+
 // --- ping pong ----------------------------------------------------------------
 
 function pongName(st, i, you) {
@@ -723,6 +917,41 @@ function renderResult(s) {
     }
     return;
   }
+  if (s.game.id === "red_light") {
+    const w = st.winner;
+    const time = st.finish_time !== null ? `${st.finish_time} s` : "";
+    const caught = (i) => `caught ${st.players[i].times_caught}×`;
+    if (st.mode === "clock") {
+      $("result-emoji").textContent = won ? "🏁" : "⏰";
+      $("result-title").textContent = won ? (mine ? "You made it!" : "They made it!") : "Out of time";
+      $("result-sub").textContent = won ? `${time} · ${caught(0)} · ${s.difficulty}` : `Got ${st.players[0].progress}% of the way · ${s.difficulty}`;
+    } else if (st.mode === "computer") {
+      $("result-emoji").textContent = won ? "🏁" : "🤖";
+      $("result-title").textContent = won ? (mine ? "You beat the computer!" : "The player won!") : "The computer won";
+      $("result-sub").textContent = `${time} · ${s.difficulty}`;
+    } else {
+      $("result-emoji").textContent = "🏁";
+      $("result-title").textContent = w === s.you ? "You win! 🎉" : `${capitalize(st.players[w].color)} wins!`;
+      $("result-sub").textContent = `${time} · ${caught(w)}`;
+    }
+    return;
+  }
+  if (s.game.id === "morse") {
+    const word = (st.word || "").toUpperCase();
+    const w = st.winners;
+    if (won && st.solo) {
+      $("result-emoji").textContent = "📡";
+      $("result-title").textContent = mine ? "You cracked it!" : "They cracked it!";
+    } else if (won) {
+      $("result-emoji").textContent = "🏆";
+      $("result-title").textContent = w[0] === s.you ? "You cracked it first! 🎉" : `${capitalize(st.players[w[0]].color)} cracked it!`;
+    } else {
+      $("result-emoji").textContent = "📻";
+      $("result-title").textContent = st.solo ? (mine ? "Not this time" : "They didn't get it") : "Nobody got it";
+    }
+    $("result-sub").textContent = `The word was ${word} · ${s.difficulty}`;
+    return;
+  }
   if (s.game.id === "fast_tap") {
     if (st.solo) {
       $("result-emoji").textContent = won ? "🎊" : "🐢";
@@ -773,7 +1002,7 @@ function toast(text) {
 // --- buttons -------------------------------------------------------------------
 
 $("start-btn").onclick = () => startGame(selectedGame);
-$("quit-btn").onclick = $("tap-quit").onclick = $("sumo-quit").onclick = $("simon-quit").onclick = $("pong-quit").onclick = () => {
+$("quit-btn").onclick = $("tap-quit").onclick = $("sumo-quit").onclick = $("simon-quit").onclick = $("pong-quit").onclick = $("morse-quit").onclick = $("rl-quit").onclick = () => {
   if (confirm("Quit this game?")) send({ type: "stop" });
 };
 $("again-btn").onclick = () => {

@@ -99,6 +99,44 @@ side scores; first to 5 wins.
 - Two players: the host is red, the second phone is blue. Solo: you're red
   and the computer returns 70% (easy), 80% (medium) or 93% (hard) of balls.
 
+### Morse Code (1–6 players)
+The strip flashes a secret word in Morse code: short flashes are dots, long
+flashes dashes (a dash is 3 dots long; 1 dot of dark between flashes, 3
+between letters). After the word the strip flashes blue, then plays it again.
+Type your guess on the phone and tap **Guess**. The phone shows a Morse chart,
+which letter is playing, and boxes for the letters.
+
+| Difficulty | Words | Dot | Guesses | Playbacks |
+|---|---|---|---|---|
+| Easy | 3 letters | 0.35 s | 5 | until someone gets it |
+| Medium | 4–5 letters | 0.25 s | 3 | until someone gets it |
+| Hard | 5–6 letters | 0.18 s | 2 | 3, then 10 s to answer |
+
+With friends, everyone guesses the same word on their own phone, each with
+their own guesses; the first right answer wins. Run out of guesses and you're
+out; if everyone is out, nobody wins. The 200 words are in
+`ledgames/games/morse_words.txt` (one per line, 3–6 letters).
+
+### Red Light, Green Light (1–6 players)
+A race up the strip. Each player is a dot of their color starting at the
+bottom; hold the button on your phone to climb (14 s of holding reaches the
+top), let go to stop. The whole strip glows the light's color. Anyone still
+holding after red comes on (past a short grace period) is caught: their dot
+blinks, slides back down, and can't move until the next green. First to the
+top wins.
+
+| Difficulty | Green | Yellow warning | Time to let go | Caught: slide back | Fake-outs |
+|---|---|---|---|---|---|
+| Easy | 3–6 s | 1 s | 0.5 s | 20% of the strip | no |
+| Medium | 2–5 s | 0.5 s | 0.4 s | 25% | no |
+| Hard | 1.5–4.5 s | none | 0.3 s | 30% | yes: the strip flickers red for a moment |
+
+Red lasts 2–4 s. Playing alone, pick **Race the computer** (a computer dot
+that sometimes gets caught; it finishes in about 27 s on easy and 36 s on
+hard) or **Beat the clock** (60 s on easy, 45 on medium, 40 on hard).
+Letting go counts from when it happened on the phone, so Wi-Fi lag doesn't
+get anyone caught.
+
 ## Lights
 
 Ambient effects that play on the strip whenever nobody is playing: ✨ Lights
