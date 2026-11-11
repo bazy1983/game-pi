@@ -1125,6 +1125,32 @@ for (const b of document.querySelectorAll("[data-nav]")) {
   };
 }
 
+// --- full screen ---------------------------------------------------------------
+
+// iPhones only allow full screen for videos, so the button only shows where it works.
+{
+  const root = document.documentElement;
+  const enter = root.requestFullscreen || root.webkitRequestFullscreen;
+  const exit = document.exitFullscreen || document.webkitExitFullscreen;
+  const current = () => document.fullscreenElement || document.webkitFullscreenElement;
+  const btn = $("fullscreen-btn");
+  // Corners pointing out (enter) or in (exit).
+  const icon = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
+  const ENTER = icon("M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5");
+  const EXIT = icon("M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5");
+  const update = () => {
+    btn.innerHTML = current() ? EXIT : ENTER;
+    btn.setAttribute("aria-label", current() ? "Exit full screen" : "Full screen");
+  };
+  if (enter) {
+    btn.classList.remove("hidden");
+    btn.onclick = () => (current() ? exit.call(document) : enter.call(root))?.catch?.(() => {});
+    document.addEventListener("fullscreenchange", update);
+    document.addEventListener("webkitfullscreenchange", update);
+    update();
+  }
+}
+
 // --- invite --------------------------------------------------------------------
 
 for (const b of document.querySelectorAll(".invite-btn")) {

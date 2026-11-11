@@ -66,6 +66,17 @@ class WebTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(r.status, 200, path)
             self.assertEqual(r.headers.get("Cache-Control"), "no-cache", path)
 
+    async def test_home_screen_app(self):
+        await self.start()
+        page = await (await self.client.get("/")).text()
+        self.assertIn('<link rel="manifest" href="/static/manifest.json">', page)
+        manifest = await (await self.client.get("/static/manifest.json")).json(content_type=None)
+        self.assertEqual(manifest["display"], "standalone")
+        paths = {icon["src"] for icon in manifest["icons"]} | {"/static/icons/apple-touch-icon.png"}
+        for path in paths:
+            r = await self.client.get(path)
+            self.assertEqual((r.status, r.content_type), (200, "image/png"), path)
+
     async def test_no_redirect_when_online(self):
         await self.start()
         r = await self.client.get("/", allow_redirects=False)

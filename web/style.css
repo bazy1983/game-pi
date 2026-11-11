@@ -277,6 +277,9 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 /* --- invite & device ----------------------------------------------------- */
 
 .title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.pills { display: flex; gap: 8px; }
+.icon-pill { display: flex; align-items: center; padding: 9px 12px; }
+.icon-pill svg { width: 18px; height: 18px; }
 .pill { background: #161a23; color: #eef1f6; padding: 9px 16px; border-radius: 999px; font-size: 15px; font-weight: 600; }
 .center-pill { align-self: center; margin-top: 8px; }
 .footer-link { margin-top: auto; padding: 28px 0 4px; background: none; color: #8a93a6; font-size: 15px; }
