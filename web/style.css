@@ -269,8 +269,34 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 .swatch .bar { height: 40px; border-radius: 12px; border: 2px solid transparent; }
 .swatch.selected { color: #eef1f6; }
 .swatch.selected .bar { border-color: #eef1f6; }
-.color-row { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding: 10px 18px; border-radius: 14px; background: #161a23; color: #8a93a6; }
-.color-row input { width: 64px; height: 40px; padding: 0; border: 0; border-radius: 8px; background: none; }
+.grad-editor { margin-top: 14px; padding: 18px 16px 16px; border-radius: 14px; background: #161a23; }
+/* The track is the bar plus the row of stops under it; it takes all the touches. */
+.grad-track { position: relative; padding: 0 14px 40px; touch-action: none; user-select: none; -webkit-user-select: none; }
+.grad-bar { height: 52px; border-radius: 8px; border: 1px solid #3a4152; }
+.grad-stops { position: absolute; left: 14px; right: 14px; top: 58px; height: 30px; }
+.grad-stop { position: absolute; top: 0; width: 26px; height: 26px; margin-left: -13px; border-radius: 7px; border: 2px solid #eef1f6; box-shadow: 0 0 0 1px #0b0d12; }
+.grad-stop::before { /* the pointer up to the bar */
+  content: ""; position: absolute; left: 50%; top: -8px; margin-left: -6px;
+  border: 6px solid transparent; border-top: 0; border-bottom: 6px solid #eef1f6;
+}
+.grad-stop.selected { border-color: #3b8cff; box-shadow: 0 0 0 1px #0b0d12, 0 0 0 4px rgba(59, 140, 255, .35); }
+.grad-stop.selected::before { border-bottom-color: #3b8cff; }
+.grad-stop.removing { opacity: .3; }
+.grad-editor .slider-ends { padding: 0 2px; margin-top: 0; }
+.grad-hint { font-size: 13px; margin: 10px 0 14px; }
+.grad-fields { display: flex; align-items: flex-end; gap: 12px; }
+.grad-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #8a93a6; }
+.grad-field input[type=color] { width: 72px; height: 42px; padding: 0; border: 0; border-radius: 8px; background: none; }
+.grad-at { display: flex; align-items: center; gap: 6px; height: 42px; padding: 0 12px; border-radius: 8px; background: #0b0d12; color: #8a93a6; }
+.grad-at input { width: 56px; font: inherit; font-size: 17px; color: #eef1f6; background: none; border: 0; text-align: right; outline: none; }
+.grad-fields .icon-pill { margin-left: auto; height: 42px; padding: 0 14px; }
+.grad-fields .icon-pill:disabled { opacity: .35; }
+.grad-actions { flex-wrap: wrap; margin-top: 16px; }
+.grad-actions .pill { background: #0b0d12; }
+.grad-actions .pill.selected { background: #eef1f6; color: #0b0d12; }
+.grad-presets { margin-top: 14px; }
+.grad-presets .swatch { position: relative; }
+.grad-presets .remove { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; background: #3a4152; color: #eef1f6; font-size: 14px; line-height: 22px; text-align: center; }
 .slider { width: 100%; accent-color: #eef1f6; height: 32px; }
 .slider-ends { display: flex; justify-content: space-between; font-size: 13px; margin-top: -4px; }
 

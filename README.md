@@ -167,8 +167,13 @@ fade back in. The choice is saved on the unit, so it survives a reboot.
 - Effects: Flow, Aurora, Fire (rises from the bottom), Twinkle, Meteor,
   Ripples, Bouncing balls, Chase, Breathe, Still (the palette spread over the
   strip; with one color, a solid color).
-- Colors: Rainbow, Fire, Ocean, Forest, Sunset, Party, Ice, or a color of
-  your own. Every effect works with every palette.
+- Colors: Rainbow, Fire, Ocean, Forest, Sunset, Party, Ice, or a gradient
+  of your own. Every effect works with every palette.
+- Your gradient: up to 12 colors along the strip, bottom to top. Tap the bar
+  to add a color, drag one to move it (or down, away from the bar, to remove
+  it), or type its location. Save it as a preset (up to 24, kept on the unit),
+  start from a built-in palette under Gradients, or reverse it. One color is a
+  solid color.
 - Speed (4× slower to 4× faster) and brightness (on top of the strip's own
   brightness and current limit).
 - Sound level (with the microphone, see Hardware): a bar rises with the

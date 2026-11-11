@@ -45,10 +45,30 @@
     <div id="lights-effects" class="grid"></div>
     <h2>Colors</h2>
     <div id="lights-palettes" class="swatches"></div>
-    <label id="lights-color-row" class="color-row hidden">
-      <span>Your color</span>
-      <input id="lights-color" type="color">
-    </label>
+    <!-- Your gradient: color stops along the strip, bottom to top -->
+    <div id="grad-editor" class="grad-editor hidden">
+      <div id="grad-track" class="grad-track">
+        <div id="grad-bar" class="grad-bar"></div>
+        <div id="grad-stops" class="grad-stops"></div>
+      </div>
+      <div class="slider-ends muted"><span>Bottom of the strip</span><span>Top</span></div>
+      <p class="muted grad-hint">Tap the bar to add a color. Drag a color to move it, or drag it down, away from the bar, to remove it.</p>
+      <div class="grad-fields">
+        <label class="grad-field"><span>Color</span><input id="grad-color" type="color"></label>
+        <label class="grad-field"><span>Location</span>
+          <span class="grad-at"><input id="grad-at" type="number" inputmode="decimal" min="0" max="100" step="0.1"><span>%</span></span>
+        </label>
+        <button id="grad-delete" class="pill icon-pill" aria-label="Remove this color">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>
+        </button>
+      </div>
+      <div class="pills grad-actions">
+        <button id="grad-save" class="pill">Save as preset</button>
+        <button id="grad-presets-btn" class="pill">Gradients</button>
+        <button id="grad-reverse" class="pill">Reverse</button>
+      </div>
+      <div id="grad-presets" class="swatches grad-presets hidden"></div>
+    </div>
     <h2>Speed</h2>
     <input id="lights-speed" class="slider" type="range" min="0" max="1" step="0.01" aria-label="Speed">
     <h2>Brightness</h2>

@@ -3,7 +3,7 @@ import unittest
 
 from ledgames.effects.ambient import EFFECTS
 from ledgames.engine import Engine
-from ledgames.lights import PALETTES, Lights, make_lut
+from ledgames.lights import PALETTES, Lights, gradient_lut, make_lut, palette_gradient
 from tests.test_engine import Clock, NullStrip
 
 
@@ -58,19 +58,60 @@ class EffectsTest(unittest.TestCase):
 class SettingsTest(unittest.TestCase):
     def test_invalid_changes_change_nothing(self):
         lights = Lights()
-        for bad in ({"effect": "nope"}, {"speed": 2}, {"level": 0}, {"color": "red"}, {"on": 1}, {"speed": True}):
+        for bad in ({"effect": "nope"}, {"speed": 2}, {"level": 0}, {"gradient": [{"at": 0, "color": "red"}]}, {"on": 1}, {"speed": True}):
             before = lights.settings()
             self.assertIsNotNone(lights.update({"palette": "ocean", **bad}), bad)
             self.assertEqual(lights.settings(), before)
 
     def test_custom_color(self):
         lights = Lights()
-        self.assertIsNone(lights.update({"on": True, "effect": "still", "palette": "custom", "color": "#FF8000", "level": 1.0}))
-        self.assertEqual(lights.color, "#ff8000")
+        one = [{"at": 0.3, "color": "#FF8000"}]
+        self.assertIsNone(lights.update({"on": True, "effect": "still", "palette": "custom", "gradient": one, "level": 1.0}))
+        self.assertEqual(lights.gradient, [{"at": 0.3, "color": "#ff8000"}])
         pixels = [(0, 0, 0)] * 5
         for _ in range(40):  # past the fade-in
             lights.render(pixels, 1 / 30)
         self.assertEqual(pixels, [(255, 128, 0)] * 5)
+
+    def test_custom_gradient(self):
+        lights = Lights()
+        # Stops in any order; black up to 20%, then to white at 60%, white after.
+        gradient = [{"at": 0.6, "color": "#ffffff"}, {"at": 0.2, "color": "#000000"}]
+        self.assertIsNone(lights.update({"on": True, "effect": "still", "palette": "custom", "gradient": gradient, "level": 1.0}))
+        self.assertEqual(lights.gradient[0]["at"], 0.6)  # kept in the phone's order
+        pixels = [(0, 0, 0)] * 10
+        for _ in range(40):
+            lights.render(pixels, 1 / 30)
+        self.assertEqual(pixels[0], (0, 0, 0))
+        self.assertEqual(pixels[2], (0, 0, 0))
+        self.assertEqual(pixels[4], (128, 128, 128))
+        self.assertEqual(pixels[9], (255, 255, 255))
+
+        lut = gradient_lut([{"at": 0.5, "color": "#ff0000"}, {"at": 0.5, "color": "#0000ff"}])
+        self.assertEqual((lut[127], lut[128]), ((255, 0, 0), (0, 0, 255)))  # a hard edge
+
+        for bad in ([], [{"at": 1.2, "color": "#000000"}], [{"at": "0", "color": "#000000"}],
+                    [{"at": 0, "color": "#000000"}] * 13, [{"color": "#000000"}], "#ff0000"):
+            self.assertIsNotNone(lights.update({"gradient": bad}), bad)
+
+    def test_presets(self):
+        lights = Lights()
+        stops = [{"at": 0, "color": "#FF0000"}, {"at": 1, "color": "#00ff00"}]
+        self.assertIsNone(lights.update({"presets": [{"name": " Xmas ", "stops": stops}]}))
+        self.assertEqual(lights.presets, [{"name": "Xmas", "stops": [{"at": 0.0, "color": "#ff0000"}, {"at": 1.0, "color": "#00ff00"}]}])
+        for bad in ([{"name": "", "stops": stops}], [{"name": "x" * 25, "stops": stops}], [{"name": "a", "stops": []}],
+                    [{"name": "a", "stops": stops}] * 25, {"name": "a"}):
+            self.assertIsNotNone(lights.update({"presets": bad}), bad)
+
+    def test_palettes_as_gradients(self):
+        g = palette_gradient(PALETTES["rainbow"])
+        self.assertEqual((g[0], g[-1]), ({"at": 0.0, "color": "#ff0000"}, {"at": 1.0, "color": "#ff0000"}))
+        self.assertEqual(len(g), 7)
+
+    def test_an_old_saved_color_becomes_a_gradient(self):
+        lights = Lights()
+        lights.load({"palette": "custom", "color": "#123456"})
+        self.assertEqual(lights.gradient, [{"at": 0.0, "color": "#123456"}])
 
     def test_load_skips_what_is_no_longer_valid(self):
         lights = Lights()

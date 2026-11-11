@@ -53,7 +53,7 @@ from .engine import Engine
 from .games import GAMES
 from .leds import MAX_LEDS
 from .leds.sim import SimStrip
-from .lights import PALETTES, css_gradient
+from .lights import PALETTES, palette_gradient
 from .updater import Updater
 from .wifi import Wifi
 
@@ -355,7 +355,7 @@ class Server:
             **lights.settings(),
             "effects": [{"id": k, "name": cls.name, "sound": cls.sound} for k, cls in EFFECTS.items()],
             "mic": bool(lights.mic and lights.mic.available),
-            "palettes": [{"id": k, "name": p.name, "css": css_gradient(p, lights.color)} for k, p in PALETTES.items()],
+            "palettes": [{"id": k, "name": p.name, "stops": palette_gradient(p) if p.stops else None} for k, p in PALETTES.items()],
         }
 
     async def lights_get(self, _: web.Request) -> web.Response:

@@ -1291,23 +1291,199 @@ function renderLights() {
     const b = document.createElement("button");
     b.className = "swatch" + (lights.palette === p.id ? " selected" : "");
     b.innerHTML = `<div class="bar"></div><span></span>`;
-    b.querySelector(".bar").style.background = p.id === "custom" ? lights.color : p.css;
+    b.querySelector(".bar").style.background = cssGradient(p.stops || lights.gradient);
     b.querySelector("span").textContent = p.name;
     b.onclick = () => setLights({ palette: p.id });
     pal.appendChild(b);
   }
-  $("lights-color-row").classList.toggle("hidden", lights.palette !== "custom");
+  $("grad-editor").classList.toggle("hidden", lights.palette !== "custom");
+  renderGradient();
 
-  // Don't move a slider (or the color) under the finger.
-  for (const [id, key] of [["lights-color", "color"], ["lights-speed", "speed"], ["lights-level", "level"]]) {
+  // Don't move a slider under the finger.
+  for (const [id, key] of [["lights-speed", "speed"], ["lights-level", "level"]]) {
     if (document.activeElement !== $(id)) $(id).value = lights[key];
   }
 }
 
 $("lights-power").onclick = () => setLights({ on: !lights.on });
-$("lights-color").oninput = (e) => setLights({ color: e.target.value });
 $("lights-speed").oninput = (e) => setLights({ speed: Number(e.target.value) });
 $("lights-level").oninput = (e) => setLights({ level: Number(e.target.value) });
+
+// --- your gradient ---------------------------------------------------------------
+// Like a paint program's gradient editor: color stops under a bar, 0% at the
+// bottom of the strip. Stops keep their order in the list (so a dragged stop
+// stays selected); the lights sort them by location.
+
+const MAX_STOPS = 12;    // as in lights.py
+const MAX_PRESETS = 24;
+const REMOVE_DRAG = 50;  // px below the stops: let go to remove the stop
+let gradSel = 0;         // the selected stop
+let gradDrag = null;     // {i, removing} while a finger drags a stop
+
+function sortedStops(stops) {
+  return [...stops].sort((a, b) => a.at - b.at); // stable: equal stops keep their order
+}
+
+function cssGradient(stops) {
+  const s = sortedStops(stops);
+  if (s.length === 1) return s[0].color;
+  return `linear-gradient(90deg, ${s.map((p) => `${p.color} ${+(p.at * 100).toFixed(2)}%`).join(", ")})`;
+}
+
+function hexRgb(c) { return [1, 3, 5].map((k) => parseInt(c.slice(k, k + 2), 16)); }
+function rgbHex(rgb) { return "#" + rgb.map((v) => Math.round(v).toString(16).padStart(2, "0")).join(""); }
+
+function colorAt(stops, x) {
+  const s = sortedStops(stops);
+  if (x <= s[0].at) return s[0].color;
+  for (let k = 1; k < s.length; k++) {
+    if (x <= s[k].at) {
+      const f = (x - s[k - 1].at) / (s[k].at - s[k - 1].at || 1);
+      const a = hexRgb(s[k - 1].color), b = hexRgb(s[k].color);
+      return rgbHex(a.map((v, c) => v + (b[c] - v) * f));
+    }
+  }
+  return s[s.length - 1].color;
+}
+
+function setGradient(stops) {
+  setLights({ gradient: stops.map((p) => ({ ...p })), palette: "custom" });
+}
+
+function renderGradient() {
+  const stops = lights.gradient;
+  gradSel = Math.min(gradSel, stops.length - 1);
+  const removing = gradDrag && gradDrag.removing ? gradDrag.i : -1; // shown without it
+  $("grad-bar").style.background = cssGradient(stops.filter((_, i) => i !== removing));
+  const row = $("grad-stops");
+  row.innerHTML = "";
+  stops.forEach((p, i) => {
+    const m = document.createElement("div");
+    m.className = "grad-stop" + (i === gradSel ? " selected" : "")
+      + (gradDrag && gradDrag.i === i && gradDrag.removing ? " removing" : "");
+    m.style.left = `${p.at * 100}%`;
+    m.style.background = p.color;
+    m.dataset.i = i;
+    row.appendChild(m);
+  });
+  const sel = stops[gradSel];
+  if (document.activeElement !== $("grad-color")) $("grad-color").value = sel.color;
+  if (document.activeElement !== $("grad-at")) $("grad-at").value = +(sel.at * 100).toFixed(1);
+  $("grad-delete").disabled = stops.length < 2;
+  if (!$("grad-presets").classList.contains("hidden")) renderPresets();
+}
+
+function renderPresets() {
+  const box = $("grad-presets");
+  box.innerHTML = "";
+  const add = (name, stops, onRemove) => {
+    const b = document.createElement("button");
+    b.className = "swatch";
+    b.innerHTML = `<div class="bar"></div><span></span>`;
+    b.querySelector(".bar").style.background = cssGradient(stops);
+    b.querySelector("span").textContent = name;
+    b.onclick = () => { gradSel = 0; setGradient(stops); };
+    if (onRemove) {
+      const x = document.createElement("span");
+      x.className = "remove";
+      x.textContent = "×";
+      x.setAttribute("aria-label", `Remove ${name}`);
+      x.onclick = (e) => { e.stopPropagation(); onRemove(); };
+      b.appendChild(x);
+    }
+    box.appendChild(b);
+  };
+  lights.presets.forEach((p, i) => add(p.name, p.stops, () => {
+    if (confirm(`Remove the gradient “${p.name}”?`)) setLights({ presets: lights.presets.filter((_, k) => k !== i) });
+  }));
+  for (const p of lights.palettes) if (p.stops) add(p.name, p.stops);
+}
+
+function trackX(e) {
+  const r = $("grad-bar").getBoundingClientRect();
+  return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+}
+
+$("grad-track").onpointerdown = (e) => {
+  const stops = lights.gradient.map((p) => ({ ...p }));
+  let i = e.target.dataset.i;
+  if (i !== undefined) {
+    i = Number(i);
+  } else {
+    if (stops.length >= MAX_STOPS) { toast(`Up to ${MAX_STOPS} colors`); return; }
+    const at = Math.round(trackX(e) * 1000) / 1000;
+    stops.push({ at, color: colorAt(stops, at) }); // the color already there, until you change it
+    i = stops.length - 1;
+    setGradient(stops);
+  }
+  gradSel = i;
+  gradDrag = { i, removing: false, dx: 0 };
+  if (e.target.dataset.i !== undefined) {
+    // Grab the stop where the finger is, so it doesn't jump to the finger.
+    gradDrag.dx = trackX(e) - stops[i].at;
+  }
+  $("grad-track").setPointerCapture(e.pointerId);
+  renderGradient();
+};
+
+$("grad-track").onpointermove = (e) => {
+  if (!gradDrag) return;
+  const stops = lights.gradient.map((p) => ({ ...p }));
+  const below = e.clientY - $("grad-stops").getBoundingClientRect().bottom;
+  gradDrag.removing = stops.length > 1 && below > REMOVE_DRAG;
+  const at = Math.min(1, Math.max(0, trackX(e) - gradDrag.dx));
+  stops[gradDrag.i].at = Math.round(at * 1000) / 1000;
+  setGradient(stops);
+};
+
+function endDrag() {
+  if (!gradDrag) return;
+  const { i, removing } = gradDrag;
+  gradDrag = null;
+  if (removing) removeStop(i);
+  else renderGradient();
+}
+$("grad-track").onpointerup = endDrag;
+$("grad-track").onpointercancel = endDrag;
+
+function removeStop(i) {
+  if (lights.gradient.length < 2) return;
+  const stops = lights.gradient.filter((_, k) => k !== i);
+  gradSel = Math.min(i, stops.length - 1);
+  setGradient(stops);
+}
+
+$("grad-color").oninput = (e) => {
+  const stops = lights.gradient.map((p) => ({ ...p }));
+  stops[gradSel].color = e.target.value;
+  setGradient(stops);
+};
+$("grad-at").onchange = (e) => {
+  const v = Number(e.target.value);
+  const stops = lights.gradient.map((p) => ({ ...p }));
+  if (e.target.value !== "" && Number.isFinite(v)) stops[gradSel].at = Math.round(Math.min(100, Math.max(0, v)) * 10) / 1000;
+  e.target.blur();
+  setGradient(stops);
+};
+$("grad-delete").onclick = () => removeStop(gradSel);
+$("grad-reverse").onclick = () => setGradient(lights.gradient.map((p) => ({ ...p, at: Math.round((1 - p.at) * 1000) / 1000 })));
+$("grad-presets-btn").onclick = () => {
+  const box = $("grad-presets");
+  box.classList.toggle("hidden");
+  $("grad-presets-btn").classList.toggle("selected", !box.classList.contains("hidden"));
+  if (!box.classList.contains("hidden")) renderPresets();
+};
+$("grad-save").onclick = () => {
+  const name = (prompt("Name this gradient") || "").trim().slice(0, 24);
+  if (!name) return;
+  const presets = lights.presets.filter((p) => p.name !== name); // the same name replaces it
+  if (presets.length >= MAX_PRESETS) { toast(`Up to ${MAX_PRESETS} gradients: remove one first`); return; }
+  presets.unshift({ name, stops: lights.gradient.map((p) => ({ ...p })) });
+  setLights({ presets });
+  toast(`Saved “${name}”`);
+  const box = $("grad-presets");
+  if (box.classList.contains("hidden")) $("grad-presets-btn").click();
+};
 
 $("leds-input").oninput = () => { $("leds-input").dataset.edited = "1"; };
 $("leds-save").onclick = async () => {
