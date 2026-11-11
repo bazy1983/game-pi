@@ -29,6 +29,14 @@ mkdir -p /etc/NetworkManager/conf.d
 printf '[connection]\nwifi.powersave = 2\n' > /etc/NetworkManager/conf.d/ledgames-wifi.conf
 iw dev wlan0 set power_save off 2>/dev/null || true
 
+# The INMP441 microphone on I2S (GPIO18-20; the strip is on GPIO12).
+# Takes effect after a reboot.
+CONFIG=/boot/firmware/config.txt
+if [ -f "$CONFIG" ] && ! grep -q '^dtoverlay=googlevoicehat-soundcard' "$CONFIG"; then
+  printf '\n[all]\n# LED Games microphone\ndtparam=i2s=on\ndtoverlay=googlevoicehat-soundcard\n' >> "$CONFIG"
+  echo "Microphone enabled: reboot to use it"
+fi
+
 mkdir -p "$ROOT/releases" /var/lib/ledgames
 chmod 700 /var/lib/ledgames
 if [ ! -x "$ROOT/.venv/bin/python" ]; then

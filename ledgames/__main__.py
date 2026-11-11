@@ -5,6 +5,7 @@ import os
 from aiohttp import web
 
 from . import __version__
+from .audio import Microphone
 from .device import default_state_dir, load_or_create, load_settings
 from .engine import Engine
 from .leds import MAX_LEDS, make_strip
@@ -22,7 +23,7 @@ def main() -> None:
         help="number of LEDs on the strip (default: the count set on the device page, else LED_COUNT or 250)",
     )
     p.add_argument("--backend", choices=["sim", "ws281x"], default=env("LED_BACKEND", "sim"))
-    p.add_argument("--pin", type=int, default=int(env("LED_PIN", 18)), help="GPIO pin (ws281x)")
+    p.add_argument("--pin", type=int, default=int(env("LED_PIN", 12)), help="GPIO pin (ws281x)")
     p.add_argument("--brightness", type=float, default=float(env("LED_BRIGHTNESS", 0.5)), help="0..1")
     p.add_argument(
         "--max-ma", type=int, default=int(env("LED_MAX_MA", 0)), help="power supply current budget in mA (0 = off)"
@@ -42,6 +43,11 @@ def main() -> None:
         default=env("UPDATES", "auto"),
         help="over-the-air updates (only when installed from a release)",
     )
+    p.add_argument(
+        "--mic",
+        default=env("MIC", "auto"),
+        help="microphone for the sound effects: auto (the first that can record), an ALSA device, or off",
+    )
     args = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("aiohttp.access").setLevel(logging.WARNING)  # phones poll; don't log every request
@@ -55,6 +61,11 @@ def main() -> None:
     strip = make_strip(args.backend, args.leds, args.brightness, args.max_ma, args.pin)
     engine = Engine(strip, fps=args.fps)
     engine.lights.load(saved_settings.get("lights", {}))
+    if args.mic != "off":
+        engine.lights.mic = Microphone(args.mic)
+        saved = saved_settings.get("mic_sensitivity")
+        if isinstance(saved, (int, float)) and not isinstance(saved, bool) and 0 <= saved <= 1:
+            engine.lights.mic.sensitivity = float(saved)
 
     device = wifi = None
     if args.wifi != "off":

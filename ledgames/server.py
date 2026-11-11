@@ -26,6 +26,7 @@ HTTP (JSON):
   POST /api/device/wifi-setup  start the setup hotspot to change networks
   POST /api/device/leds        {"count": n}: set (and save) the number of LEDs
   POST /api/device/test-leds   play the wiring check pattern on the strip
+  POST /api/device/mic         microphone sensitivity, 0–1: {sensitivity}
   GET  /api/lights             ambient lights settings, effects and palettes
   POST /api/lights             change some of those settings (see lights.py)
   GET  /api/invite             {"url", "host_url"}: link other phones can open
@@ -80,6 +81,7 @@ class Server:
         self.updater = updater
         self.state_dir = state_dir  # where device page settings are saved (None: not saved)
         self._save_lights: asyncio.TimerHandle | None = None
+        self._save_mic: asyncio.TimerHandle | None = None
         self.clients: dict[web.WebSocketResponse, str] = {}  # socket → client id
         self.away: dict[str, asyncio.Task] = {}  # client id → pending abandon
         self.last_players: list[str] = []  # for "Play again"
@@ -269,6 +271,7 @@ class Server:
                 "version": __version__,
                 "leds": self.engine.strip.num_leds,
                 "max_leds": MAX_LEDS,
+                "mic": self.mic_state(),
                 "wifi": {k: v for k, v in self.wifi.state().items() if k != "networks"} if self.wifi else None,
                 "update": self.updater.state() if self.updater else {"version": __version__, "status": "off"},
                 "busy": self.engine.busy,
@@ -313,6 +316,34 @@ class Server:
         self.engine.test_strip()  # shows where the new end is
         return web.json_response({"error": None})
 
+    def mic_state(self) -> dict | None:
+        mic = self.engine.lights.mic
+        return {"available": mic.available, "sensitivity": mic.sensitivity} if mic else None
+
+    async def device_mic(self, request: web.Request) -> web.Response:
+        body = await _json_body(request)
+        mic = self.engine.lights.mic
+        value = body.get("sensitivity")
+        if mic is None:
+            return web.json_response({"error": "The microphone is turned off."}, status=409)
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 <= value <= 1:
+            return web.json_response({"error": "Invalid sensitivity."}, status=400)
+        mic.sensitivity = float(value)
+        if self.state_dir:
+            # The slider sends a stream of changes; write the card once they stop.
+            if self._save_mic:
+                self._save_mic.cancel()
+            self._save_mic = asyncio.get_running_loop().call_later(2, self.save_mic)
+        return web.json_response({"error": None, "mic": self.mic_state()})
+
+    def save_mic(self) -> None:
+        if self._save_mic:
+            self._save_mic.cancel()
+            self._save_mic = None
+        settings = load_settings(self.state_dir)
+        settings["mic_sensitivity"] = self.engine.lights.mic.sensitivity
+        save_settings(settings, self.state_dir)
+
     async def device_test_leds(self, request: web.Request) -> web.Response:
         await _json_body(request)
         error = self.engine.test_strip()
@@ -322,7 +353,8 @@ class Server:
         lights = self.engine.lights
         return {
             **lights.settings(),
-            "effects": [{"id": k, "name": cls.name} for k, cls in EFFECTS.items()],
+            "effects": [{"id": k, "name": cls.name, "sound": cls.sound} for k, cls in EFFECTS.items()],
+            "mic": bool(lights.mic and lights.mic.available),
             "palettes": [{"id": k, "name": p.name, "css": css_gradient(p, lights.color)} for k, p in PALETTES.items()],
         }
 
@@ -428,10 +460,15 @@ def build_app(
             app["tasks"].append(asyncio.create_task(wifi.run()))
         if updater:
             app["tasks"].append(asyncio.create_task(updater.run(server.is_idle)))
+        mic = engine.lights.mic
+        if mic and mic.available:
+            app["tasks"].append(asyncio.create_task(mic.run(lambda: engine.lights.listening)))
 
     async def shutdown(app):
         if server._save_lights:
             server.save_lights()
+        if server._save_mic:
+            server.save_mic()
         for task in app["tasks"]:
             task.cancel()
         for ws in set(app["sockets"]):
@@ -449,6 +486,7 @@ def build_app(
     app.router.add_post("/api/device/wifi-setup", server.device_wifi_setup)
     app.router.add_post("/api/device/leds", server.device_leds)
     app.router.add_post("/api/device/test-leds", server.device_test_leds)
+    app.router.add_post("/api/device/mic", server.device_mic)
     app.router.add_get("/api/lights", server.lights_get)
     app.router.add_post("/api/lights", server.lights_post)
     app.router.add_get("/api/invite", server.invite)

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from aiohttp.test_utils import TestClient, TestServer
 
+from ledgames.audio import Microphone
 from ledgames.device import Device, load_settings
 from ledgames.engine import Engine
 from ledgames.leds import make_strip
@@ -126,7 +127,8 @@ class WebTest(unittest.IsolatedAsyncioTestCase):
             await self.start(state_dir=Path(tmp))
             body = await (await self.client.get("/api/lights")).json()
             self.assertFalse(body["on"])
-            self.assertIn({"id": "fire", "name": "Fire"}, body["effects"])
+            self.assertIn({"id": "fire", "name": "Fire", "sound": False}, body["effects"])
+            self.assertFalse(body["mic"])
             self.assertTrue(any(p["id"] == "custom" for p in body["palettes"]))
             r = await self.client.post("/api/lights", json={"on": True, "effect": "fire", "speed": 7})
             self.assertEqual(r.status, 400)
@@ -137,6 +139,25 @@ class WebTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(self.engine.lights.on)
             self.client.app["server"].save_lights()  # normally 2 s after the last change
             self.assertEqual(load_settings(Path(tmp))["lights"]["effect"], "fire")
+
+    async def test_mic_sensitivity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            await self.start(state_dir=Path(tmp))
+            self.assertIsNone((await (await self.client.get("/api/device")).json())["mic"])
+            r = await self.client.post("/api/device/mic", json={"sensitivity": 0.5})
+            self.assertEqual(r.status, 409)  # no microphone
+
+            self.engine.lights.mic = Microphone("plughw:9,0")  # not listening: the lights are off
+            body = await (await self.client.get("/api/device")).json()
+            self.assertEqual(body["mic"], {"available": True, "sensitivity": 0.5})
+            for bad in (-0.1, 1.5, "0.5", True, None):
+                r = await self.client.post("/api/device/mic", json={"sensitivity": bad})
+                self.assertEqual(r.status, 400, bad)
+            r = await self.client.post("/api/device/mic", json={"sensitivity": 0.8})
+            self.assertEqual(r.status, 200)
+            self.assertEqual(self.engine.lights.mic.sensitivity, 0.8)
+            self.client.app["server"].save_mic()  # normally 2 s after the last change
+            self.assertEqual(load_settings(Path(tmp))["mic_sensitivity"], 0.8)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ User=root
 WorkingDirectory=/opt/ledgames/current
 Environment=LED_BACKEND=ws281x
 Environment=LED_COUNT=195
+Environment=LED_PIN=12
 Environment=LED_BRIGHTNESS=0.5
 # Set to roughly 80% of your strip power supply's rating (e.g. 12A → 9600).
 Environment=LED_MAX_MA=9600

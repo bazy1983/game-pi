@@ -28,6 +28,7 @@ def _mix(a: RGB, b: RGB, f: float) -> RGB:
 
 class Effect:
     name = ""
+    sound = False  # reacts to the microphone: the lights set `level` before each frame
 
     def __init__(self, num_leds: int, rng: random.Random):
         self.n = num_leds
@@ -284,6 +285,47 @@ class Bounce(Effect):
         pixels[:] = [scale(c, x) if x else OFF for c, x in zip(tcolor, trail)]
 
 
+class Level(Effect):
+    """A sound level meter: a bar rises up the strip with the sound, colored
+    along the palette, and a dot marks the recent peak, then falls (faster
+    with more speed)."""
+
+    name = "Sound level"
+    sound = True
+    HOLD = 0.6  # s the peak dot waits before falling
+    FALL = 0.6  # strips per second
+
+    def __init__(self, num_leds, rng):
+        super().__init__(num_leds, rng)
+        self.level = 0.0  # 0–1, set by the lights from the microphone
+        self.peak = 0.0  # LEDs
+        self.held = 0.0
+        self._lut: list[RGB] | None = None
+        self._colors: list[RGB] = []
+
+    def draw(self, pixels, t, dt, lut):
+        n = self.n
+        if lut is not self._lut:
+            # Most of the palette from bottom to top, without wrapping back to the start.
+            self._lut, self._colors = lut, [lut[i * 224 // n] for i in range(n)]
+        colors = self._colors
+        height = self.level * n
+        if height >= self.peak:
+            self.peak, self.held = height, 0.0
+        else:
+            self.held += dt
+            if self.held > self.HOLD:
+                self.peak = max(height, self.peak - n * self.FALL * dt)
+        full = min(n, int(height))
+        out = colors[:full] + [OFF] * (n - full)
+        if full < n:
+            out[full] = scale(colors[full], height - full)
+        top = min(n - 1, int(self.peak))
+        if top > full:  # the peak, above the bar
+            out[top] = colors[top]
+        pixels[:] = out
+
+
 EFFECTS: dict[str, type[Effect]] = {
     "flow": Flow,
     "aurora": Aurora,
@@ -295,4 +337,5 @@ EFFECTS: dict[str, type[Effect]] = {
     "chase": Chase,
     "breathe": Breathe,
     "still": Still,
+    "level": Level,
 }

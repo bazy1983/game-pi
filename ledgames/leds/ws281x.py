@@ -5,10 +5,11 @@ from .base import Strip
 class Ws281xStrip(Strip):
     """Real WS2812B strip on the Raspberry Pi via rpi_ws281x (requires root).
 
-    Default pin is GPIO18 (PWM0). Note: PWM conflicts with the Pi's analog
-    audio, which is fine on a Zero W (it has none)."""
+    Default pin is GPIO12 (PWM0), which leaves GPIO18–20 free for the I2S
+    microphone; GPIO13 (PWM1) also works. Note: PWM conflicts with the Pi's analog audio, which is fine
+    on a Zero W (it has none)."""
 
-    def __init__(self, num_leds: int, brightness: float, max_milliamps: int, pin: int = 18):
+    def __init__(self, num_leds: int, brightness: float, max_milliamps: int, pin: int = 12):
         super().__init__(num_leds, brightness, max_milliamps)
         self.pin = pin
         self._open()
@@ -16,7 +17,10 @@ class Ws281xStrip(Strip):
     def _open(self) -> None:
         from rpi_ws281x import PixelStrip, ws  # only importable on the Pi
 
-        self.strip = PixelStrip(self.num_leds, self.pin, freq_hz=800_000, dma=10, invert=False, brightness=255)
+        channel = 1 if self.pin in (13, 19, 41, 45, 53) else 0  # the PWM1 pins
+        self.strip = PixelStrip(
+            self.num_leds, self.pin, freq_hz=800_000, dma=10, invert=False, brightness=255, channel=channel
+        )
         self.strip.begin()
         self._set = ws.ws2811_led_set
         self._channel = self.strip._channel

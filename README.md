@@ -150,6 +150,10 @@ fade back in. The choice is saved on the unit, so it survives a reboot.
   your own. Every effect works with every palette.
 - Speed (4× slower to 4× faster) and brightness (on top of the strip's own
   brightness and current limit).
+- Sound level (with the microphone, see Hardware): a bar rises with the
+  sound, and a dot marks the recent peak. The level adapts to the room;
+  Sensitivity on the device page sets how much sound fills the strip. The
+  microphone only listens while this effect is on, and nothing is recorded.
 
 To add an effect, write a class in `ledgames/effects/ambient.py` and add it to
 `EFFECTS`. The Pi Zero has about 33 ms per frame for everything: keep per-LED
@@ -184,11 +188,12 @@ Every option can be passed as a flag or an environment variable.
 |---|---|---|---|
 | `--leds` | `LED_COUNT` | 250 | number of LEDs; a count saved on the device page wins over `LED_COUNT` (not over `--leds`) |
 | `--backend` | `LED_BACKEND` | `sim` | `sim` or `ws281x` |
-| `--pin` | `LED_PIN` | 18 | GPIO data pin |
+| `--pin` | `LED_PIN` | 12 | GPIO data pin |
 | `--brightness` | `LED_BRIGHTNESS` | 0.5 | global brightness 0–1 |
 | `--max-ma` | `LED_MAX_MA` | 0 | current budget in mA; frames are dimmed to stay under it (0 = off) |
 | `--port` | `PORT` | 8080 | |
 | `--wifi` | `WIFI` | `off` | Wi-Fi setup hotspot: `nm` (NetworkManager plus hostapd, on the Pi), `fake` (simulator), `off` |
+| `--mic` | `MIC` | `auto` | microphone for Sound level: `auto` (the first that can record), an ALSA device, or `off` |
 | `--updates` | `UPDATES` | `auto` | over-the-air updates: `auto`, `manual` (device page button) or `off` |
 | | `UPDATE_URL` | GitHub | where to look for releases (for testing) |
 | | `LEDGAMES_STATE` | `/var/lib/ledgames` | unit identity (`device.json`) and device page settings (`settings.json`) |
@@ -201,8 +206,22 @@ Every option can be passed as a flag or an environment variable.
  5V PSU (−) ──────────────┴──────┬───────── strip GND
                                  │
  Pi GND ─────────────────────────┤
- Pi GPIO18 ── 74AHCT125 ── 330Ω ─┴───────── strip DIN   (LED 0 at the bottom)
+ Pi GPIO12 ── 74AHCT125 ── 330Ω ─┴───────── strip DIN   (LED 0 at the bottom)
 ```
+
+The INMP441 I2S microphone (for sound-reactive lights):
+
+| INMP441 | Pi header pin |
+|---|---|
+| VDD | 1 (3.3 V, never 5 V) |
+| GND | 6 |
+| SCK | 12 (GPIO18) |
+| WS | 35 (GPIO19) |
+| SD | 38 (GPIO20) |
+| L/R | 39 (GND: left channel) |
+
+Keep its wires short (under ~15 cm). The installer turns on I2S in
+`/boot/firmware/config.txt`; reboot once afterwards.
 
 - Power the strip from its own 5 V supply, **not** from the Pi. 250–300 LEDs can
   draw up to 15–18 A at full white; a 10 A supply plus `LED_MAX_MA` and

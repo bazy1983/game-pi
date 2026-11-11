@@ -7,6 +7,12 @@ from ledgames.lights import PALETTES, Lights, make_lut
 from tests.test_engine import Clock, NullStrip
 
 
+class FakeMic:
+    def __init__(self, level=0.0):
+        self.level = level
+        self.available = True
+
+
 def valid(pixels):
     return all(
         isinstance(px, tuple) and len(px) == 3 and all(isinstance(c, int) and 0 <= c <= 255 for c in px) for px in pixels
@@ -32,6 +38,7 @@ class EffectsTest(unittest.TestCase):
         for effect in EFFECTS:
             lights = Lights(random.Random(2))
             lights.update({"on": True, "effect": effect, "level": 1.0})
+            lights.mic = FakeMic(0.5)  # for the sound effects
             pixels = [(0, 0, 0)] * 100
             lit = 0
             for _ in range(90):

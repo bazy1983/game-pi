@@ -1094,6 +1094,15 @@ function renderDevice(d) {
   // Polling mustn't overwrite a number being typed.
   if (document.activeElement !== leds && !leds.dataset.edited) leds.value = d.leds;
   for (const id of ["leds-save", "leds-test"]) $(id).disabled = d.busy;
+  $("mic-section").classList.toggle("hidden", !d.mic);
+  if (d.mic) {
+    $("mic-text").textContent = d.mic.available
+      ? "How much sound it takes to fill the strip in the Sound level light effect. It still adjusts to how loud the room is."
+      : "No microphone found. Check its wiring, then restart the unit.";
+    $("mic-controls").classList.toggle("hidden", !d.mic.available);
+    const s = $("mic-sensitivity");
+    if (document.activeElement !== s && !micTimer) s.value = d.mic.sensitivity;
+  }
   $("wifi-setup-btn").classList.toggle("hidden", !d.wifi);
   $("wifi-setup-btn").onclick = async () => {
     const msg = `${d.name} will leave this network. Then join the Wi-Fi network “${d.wifi.hotspot}” `
@@ -1144,7 +1153,8 @@ function renderLights() {
   fx.innerHTML = "";
   for (const e of lights.effects) {
     // Picking an effect turns the lights on.
-    fx.appendChild(card(e.name, "", lights.on && lights.effect === e.id, () => setLights({ effect: e.id, on: true })));
+    const desc = !e.sound ? "" : lights.mic ? "🎤 Reacts to sound" : "Needs a microphone";
+    fx.appendChild(card(e.name, desc, lights.on && lights.effect === e.id, () => setLights({ effect: e.id, on: true })));
   }
 
   const pal = $("lights-palettes");
@@ -1184,5 +1194,18 @@ $("leds-save").onclick = async () => {
   pollDevice();
 };
 $("leds-test").onclick = () => postJSON("/api/device/test-leds");
+
+// The slider sends at most ~8 changes a second.
+let micTimer = null;
+function sendMic() {
+  if (micTimer) return;
+  micTimer = setTimeout(async () => {
+    const sensitivity = Number($("mic-sensitivity").value);
+    await postJSON("/api/device/mic", { sensitivity });
+    micTimer = null;
+    if (Number($("mic-sensitivity").value) !== sensitivity) sendMic(); // moved while sending
+  }, 120);
+}
+$("mic-sensitivity").oninput = sendMic;
 
 connect();

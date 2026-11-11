@@ -8,6 +8,8 @@ Settings:
   color    "#rrggbb", the custom color
   speed    0–1 (0.5 = normal; each end is 4× slower / faster)
   level    brightness, 0.05–1 (on top of the strip's own brightness)
+
+Sound effects (like Sound level) read `mic.level`; see audio.py.
 """
 
 import random
@@ -84,6 +86,12 @@ class Lights:
         self._lut: list[RGB] | None = None
         self._t = 0.0
         self._fade = 0.0
+        self.mic = None  # an audio.Microphone, if the unit has one
+
+    @property
+    def listening(self) -> bool:
+        """A sound effect is on, so the microphone should listen."""
+        return self.on and EFFECTS[self.effect].sound
 
     def settings(self) -> dict:
         return {k: getattr(self, k) for k in DEFAULTS}
@@ -132,6 +140,8 @@ class Lights:
             self._lut = make_lut(stops)
         rate = 4 ** (2 * self.speed - 1)
         self._t += dt * rate
+        if self._fx.sound:
+            self._fx.level = self.mic.level if self.mic else 0.0
         self._fx.draw(pixels, self._t, dt * rate, self._lut)
         self._fade = min(1.0, self._fade + dt / FADE_IN)
         return self.level * self._fade

@@ -60,6 +60,14 @@
       <button id="leds-save" class="secondary">Save</button>
     </div>
     <button id="leds-test" class="secondary">Test LEDs</button>
+    <div id="mic-section" class="hidden">
+      <h2>Microphone</h2>
+      <p id="mic-text" class="muted"></p>
+      <div id="mic-controls">
+        <input id="mic-sensitivity" class="slider" type="range" min="0" max="1" step="0.01" aria-label="Microphone sensitivity">
+        <div class="slider-ends muted"><span>Less sensitive</span><span>More sensitive</span></div>
+      </div>
+    </div>
     <h2>Updates</h2>
     <p id="update-status" class="muted"></p>
     <button id="update-btn" class="secondary"></button>
