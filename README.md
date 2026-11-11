@@ -137,6 +137,27 @@ hard) or **Beat the clock** (60 s on easy, 45 on medium, 40 on hard).
 Letting go counts from when it happened on the phone, so Wi-Fi lag doesn't
 get anyone caught.
 
+### Hot Potato (1–6 players)
+The strip is split into one zone per player, glowing in their color. A
+flickering potato sits in someone's zone: tap your phone to throw it to a
+random other player, and it flies along the strip. After it lands there's a
+short catch time before it can be thrown again. A hidden fuse burns down,
+and the potato turns redder and flickers faster as it does. Whoever has it
+when the fuse runs out is out: their zone explodes and the others spread out
+over the strip. Every round is a little faster (fuse and flights 12%
+shorter). The last one standing wins.
+
+| Difficulty | Fuse (first round) | Catch time | The potato's heat |
+|---|---|---|---|
+| Easy | 15–25 s | 0.3 s | honest |
+| Medium | 10–20 s | 0.5 s | up to 15% off |
+| Hard | 6–15 s | 0.7 s | up to 35% off: it can look hot early, or cool late |
+
+A potato in the air belongs to whoever it's flying to. Throws count from
+when they happened on the phone, so a throw that was on its way when the fuse
+ran out still saves you. Playing alone, 2, 3 or 5 computer players join in;
+the game ends when you're out.
+
 ## Lights
 
 Ambient effects that play on the strip whenever nobody is playing: ✨ Lights

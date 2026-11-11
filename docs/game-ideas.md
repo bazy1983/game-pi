@@ -7,7 +7,7 @@ that).
 
 ## Party games for a group
 
-### 1. Red Light, Green Light race
+### 1. Red Light, Green Light race (built)
 Each player is a dot of their color at the bottom of the strip. Hold your
 button to climb while the strip glows green. When it turns red, anyone still
 holding after a short grace period slides back down. The first to reach the
@@ -16,7 +16,7 @@ top wins.
 - Simple, tense, and works for 6 players.
 - The timestamped taps we already have make it fair over Wi-Fi.
 
-### 2. Hot Potato
+### 2. Hot Potato (built)
 A glowing "potato" bounces between the players' color zones on the strip.
 Tap to throw it on when it's in your zone. A hidden fuse runs out at a random
 moment, and whoever holds it is out, until one player is left. The pace

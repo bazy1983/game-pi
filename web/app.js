@@ -41,6 +41,11 @@ const SPECTATE_LINES = {
     ["Don't move!", "Someone's about to get caught. Grab a seat 🍿"],
     ["Who's creeping up?", "Watch the dots climb the strip 👀"],
   ],
+  hot_potato: [
+    ["Hot potato!", "Who's holding it when it blows? Watch the strip! 🥔"],
+    ["Tick… tick… tick…", "Someone's about to get burned. Grab a seat 🍿"],
+    ["Pass it on!", "The potato is flying around the strip 🔥"],
+  ],
   ping_pong: [
     ["Rally in progress!", "Back and forth, faster and faster. Watch the strip! 🏓"],
     ["Ping… pong… ping…", "Don't blink, the ball speeds up."],
@@ -138,6 +143,7 @@ function onSession(s) {
       spectateLine = lines[Math.floor(Math.random() * lines.length)];
       morseReset();
       rlHolding = false;
+      hpLast = { holder: null, out: false };
     }
     sawPlaying = true;
     if (s.role !== "player") renderSpectate(s);
@@ -147,6 +153,7 @@ function onSession(s) {
     else if (s.game.id === "ping_pong") renderPong(s);
     else if (s.game.id === "morse") renderMorse(s);
     else if (s.game.id === "red_light") renderRedLight(s);
+    else if (s.game.id === "hot_potato") renderHotPotato(s);
     else renderPlay(s.state);
   } else if (s.phase === "ended" && sawPlaying) {
     if (wasPhase !== "ended") lockResult();
@@ -780,6 +787,83 @@ function rlHold(hold) {
   window.addEventListener("blur", () => rlHold(false));
 }
 
+// --- hot potato ---------------------------------------------------------------
+
+let hpLast = { holder: null, out: false }; // to buzz when the potato lands on you or you go out
+
+function hpName(st, i, you) {
+  const p = st.players[i];
+  if (p.cpu) return `${capitalize(p.color)} 🤖`;
+  return i === you ? "You" : capitalize(p.color);
+}
+
+// The pad's color, from orange to red as the potato heats up.
+function hpHeatColor(heat) {
+  return `rgb(255, ${Math.round(150 * (1 - heat))}, ${Math.round(40 * (1 - heat))})`;
+}
+
+function renderHotPotato(s) {
+  show("hp");
+  const st = s.state;
+  const me = st.players[s.you];
+  $("hp-quit").classList.toggle("hidden", !s.host);
+  const mode = st.mode === "computer" ? `vs ${st.players.length - 1} computers` : `${st.players.length} players`;
+  $("hp-label").textContent = `${mode} · ${s.difficulty}` + (st.round ? ` · round ${st.round}` : "");
+
+  const chips = $("hp-players");
+  chips.innerHTML = "";
+  st.players.forEach((p, i) => {
+    const c = document.createElement("div");
+    c.className = "hp-chip" + (i === s.you ? " you" : "") + (i === st.holder ? " holder" : "") + (p.out || p.left ? " out" : "");
+    c.innerHTML = "<i></i><span></span>";
+    c.querySelector("i").style.background = p.hex;
+    c.querySelector("span").textContent = hpName(st, i, s.you) + (i === st.holder ? " 🥔" : "");
+    chips.appendChild(c);
+  });
+
+  const mine = st.holder === s.you;
+  if (mine && hpLast.holder !== s.you && navigator.vibrate) navigator.vibrate(60);
+  if (me.out && !hpLast.out && navigator.vibrate) navigator.vibrate([200, 80, 300]);
+  hpLast = { holder: st.holder, out: me.out };
+
+  const pad = $("hp-pad");
+  let cls = "", text, msg, sub;
+  if (st.stage === "countdown") {
+    [text, msg, sub] = [st.countdown, "Get ready…", "When the potato lands on you, tap to throw it on"];
+  } else if (me.out) {
+    cls = "out";
+    [text, msg, sub] = ["OUT", "Boom! You're out", "Watch who's next"];
+  } else if (st.stage === "boom") {
+    [text, msg, sub] = ["💥", `${hpName(st, st.victim, s.you)} ${st.victim === s.you ? "are" : "is"} out!`, "Next round coming…"];
+  } else if (mine && st.ready) {
+    cls = "hot";
+    [text, msg, sub] = ["THROW!", "It's yours!", "Tap to get rid of it"];
+  } else if (mine) {
+    cls = "catching";
+    [text, msg, sub] = [st.flying ? "INCOMING!" : "CATCHING…", "It's coming to you!", "Get ready to throw"];
+  } else {
+    const who = st.holder === null ? "" : hpName(st, st.holder, s.you);
+    [text, msg, sub] = ["Safe…", "…for now", who ? `${who} ${st.flying ? "is getting" : "has"} the potato` : ""];
+  }
+  pad.className = "pad hp-pad" + (cls ? ` ${cls}` : "");
+  pad.style.setProperty("--heat", hpHeatColor(st.heat));
+  $("hp-pad-text").textContent = text;
+  $("hp-msg").textContent = msg;
+  $("hp-sub").textContent = sub;
+}
+
+{
+  const pad = $("hp-pad");
+  pad.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    send({ type: "input", action: { throw: true, at: serverNow() } });
+    pad.classList.add("pressed");
+    if (navigator.vibrate) navigator.vibrate(10);
+  });
+  for (const ev of ["pointerup", "pointercancel", "pointerleave"]) pad.addEventListener(ev, () => pad.classList.remove("pressed"));
+  pad.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+
 // --- ping pong ----------------------------------------------------------------
 
 function pongName(st, i, you) {
@@ -936,6 +1020,24 @@ function renderResult(s) {
     }
     return;
   }
+  if (s.game.id === "hot_potato") {
+    const w = st.winner;
+    if (st.mode === "computer") {
+      $("result-emoji").textContent = won ? "🥔" : "💥";
+      $("result-title").textContent = won ? (mine ? "You outlasted the computers!" : "The player won!") : "Boom! You're out";
+      const left = st.players.filter((p) => p.cpu && !p.out).length;
+      $("result-sub").textContent = won ? `${st.round} rounds · ${s.difficulty}` : `Round ${st.round} · ${left} computer${left === 1 ? "" : "s"} left · ${s.difficulty}`;
+    } else if (w !== null) {
+      $("result-emoji").textContent = "🏆";
+      $("result-title").textContent = w === s.you ? "You win! 🎉" : `${capitalize(st.players[w].color)} wins!`;
+      $("result-sub").textContent = `Last one standing · ${st.round} rounds`;
+    } else {
+      $("result-emoji").textContent = "💥";
+      $("result-title").textContent = "Game over";
+      $("result-sub").textContent = `${st.round} rounds`;
+    }
+    return;
+  }
   if (s.game.id === "morse") {
     const word = (st.word || "").toUpperCase();
     const w = st.winners;
@@ -1002,7 +1104,7 @@ function toast(text) {
 // --- buttons -------------------------------------------------------------------
 
 $("start-btn").onclick = () => startGame(selectedGame);
-$("quit-btn").onclick = $("tap-quit").onclick = $("sumo-quit").onclick = $("simon-quit").onclick = $("pong-quit").onclick = $("morse-quit").onclick = $("rl-quit").onclick = () => {
+$("quit-btn").onclick = $("tap-quit").onclick = $("sumo-quit").onclick = $("simon-quit").onclick = $("pong-quit").onclick = $("morse-quit").onclick = $("rl-quit").onclick = $("hp-quit").onclick = () => {
   if (confirm("Quit this game?")) send({ type: "stop" });
 };
 $("again-btn").onclick = () => {
