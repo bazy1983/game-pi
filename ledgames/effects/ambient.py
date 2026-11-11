@@ -208,6 +208,69 @@ class Meteor(Effect):
                 pixels[int(pos)] = _mix(c, WHITE, 0.6)
 
 
+class Fireworks(Effect):
+    """Rockets rise from the bottom and burst into sparks in the palette's
+    colors; the sparks spread, fall, and leave shimmering trails."""
+
+    name = "Fireworks"
+    GRAVITY = 25.0  # LEDs/s², for 150 LEDs
+    DRAG = 1.8
+
+    def __init__(self, num_leds, rng):
+        super().__init__(num_leds, rng)
+        self.size = num_leds / 150  # tuned on 150 LEDs
+        self.trail = [0.0] * num_leds
+        self.tcolor = [OFF] * num_leds
+        self.rockets: list[list] = []  # [position, target, speed, color]
+        self.sparks: list[list] = []  # [position, velocity, color, age, life]
+        self.next = 0.0
+
+    def draw(self, pixels, t, dt, lut):
+        n, rng, trail, tcolor = self.n, self.rng, self.trail, self.tcolor
+        self.next -= dt
+        if self.next <= 0:
+            target = rng.uniform(0.45, 0.92) * n
+            self.rockets.append([0.0, target, target / rng.uniform(0.8, 1.2), lut[rng.randrange(256)]])
+            self.next = rng.uniform(0.6, 1.8)
+
+        for r in self.rockets:
+            r[0] += r[2] * dt
+            if r[0] >= r[1]:  # burst: two neighboring palette colors
+                k = rng.randrange(256)
+                colors = (lut[k], lut[(k + 40) & 255])
+                for _ in range(rng.randint(10, 16) + int(4 * self.size)):
+                    vel = rng.uniform(-1, 1) * 45 * self.size
+                    self.sparks.append([r[0], vel, colors[rng.random() < 0.5], 0.0, rng.uniform(0.9, 1.8)])
+        self.rockets = [r for r in self.rockets if r[0] < r[1]]
+
+        gravity = self.GRAVITY * self.size * dt
+        drag = 1 - self.DRAG * dt
+        for s in self.sparks:
+            s[3] += dt
+            s[1] = s[1] * drag - gravity
+            s[0] += s[1] * dt
+        self.sparks = [s for s in self.sparks if s[3] < s[4] and s[0] >= 0]
+
+        rnd = rng.random
+        trail[:] = [x * max(0.0, 1 - dt * (3 + 6 * rnd())) if x > 0.03 else 0.0 for x in trail]  # trails shimmer and fade
+        for pos, _, color, age, life in self.sparks:
+            p = int(pos)
+            if p < n:
+                fade = (1 - age / life) ** 2
+                if fade > trail[p]:
+                    trail[p], tcolor[p] = fade, color
+        pixels[:] = [scale(c, x) if x else OFF for c, x in zip(tcolor, trail)]
+
+        for pos, _, color, age, _ in self.sparks:
+            if age < 0.06 and int(pos) < n:  # a white flash right after the burst
+                pixels[int(pos)] = WHITE
+        for pos, _, _, color in self.rockets:
+            head = int(pos)
+            for k in range(4):  # head plus a fading tail
+                if 0 <= head - k < n:
+                    pixels[head - k] = scale(_mix(color, WHITE, 0.7) if k == 0 else color, 0.7 / (k + 1))
+
+
 class Ripples(Effect):
     """Drops land at random spots and send rings out both ways."""
 
@@ -332,6 +395,7 @@ EFFECTS: dict[str, type[Effect]] = {
     "fire": Fire,
     "twinkle": Twinkle,
     "meteor": Meteor,
+    "fireworks": Fireworks,
     "ripples": Ripples,
     "bounce": Bounce,
     "chase": Chase,
