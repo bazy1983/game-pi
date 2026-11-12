@@ -41,6 +41,11 @@ const SPECTATE_LINES = {
     ["Don't move!", "Someone's about to get caught. Grab a seat 🍿"],
     ["Who's creeping up?", "Watch the dots climb the strip 👀"],
   ],
+  hot_cold: [
+    ["Treasure hunt!", "Somewhere on the strip a treasure is hiding. Watch them dig! 💰"],
+    ["Getting warmer…", "Icy means far, red means close. Can you spot it first? 🔥"],
+    ["Dig, dig, dig", "Every dig leaves a marker on the strip 🧭"],
+  ],
   hot_potato: [
     ["Hot potato!", "Who's holding it when it blows? Watch the strip! 🥔"],
     ["Tick… tick… tick…", "Someone's about to get burned. Grab a seat 🍿"],
@@ -144,6 +149,8 @@ function onSession(s) {
       morseReset();
       rlHolding = false;
       hpLast = { holder: null, out: false };
+      hcMyTurn = false;
+      hcDigs = 0;
     }
     sawPlaying = true;
     if (s.role !== "player") renderSpectate(s);
@@ -154,6 +161,7 @@ function onSession(s) {
     else if (s.game.id === "morse") renderMorse(s);
     else if (s.game.id === "red_light") renderRedLight(s);
     else if (s.game.id === "hot_potato") renderHotPotato(s);
+    else if (s.game.id === "hot_cold") renderHotCold(s);
     else renderPlay(s.state);
   } else if (s.phase === "ended" && sawPlaying) {
     if (wasPhase !== "ended") lockResult();
@@ -884,6 +892,131 @@ function renderHotPotato(s) {
   pad.addEventListener("contextmenu", (e) => e.preventDefault());
 }
 
+// --- hot and cold ------------------------------------------------------------
+
+// As in hot_cold.py, coldest first; "found" is the treasure.
+const HC_HEATS = {
+  freezing: ["Freezing", "#9fb8ff"], cold: ["Cold", "#2a4dff"], cool: ["Cool", "#22d3ff"],
+  warm: ["Warm", "#ffc21f"], hot: ["Hot", "#ff6a1a"], burning: ["Burning!", "#ff2a2a"], found: ["Found it!", "#ffb414"],
+};
+const HC_EMOJI = { freezing: "🥶", cold: "❄️", cool: "💧", warm: "☀️", hot: "🔥", burning: "🔥🔥", found: "💰" };
+
+let hcMyTurn = false;
+let hcAimTimer = null;
+let hcDigs = 0; // digs seen, to buzz on a new one
+
+(function buildLegend() {
+  const box = $("hc-legend");
+  for (const id of ["freezing", "cold", "cool", "warm", "hot", "burning"]) {
+    const [name, hex] = HC_HEATS[id];
+    const span = document.createElement("span");
+    span.innerHTML = `<i style="background:${hex}"></i>${name.replace("!", "")}`;
+    box.appendChild(span);
+  }
+})();
+
+function hcName(st, i, you) {
+  return i === you ? "You" : capitalize(st.players[i].color);
+}
+
+function renderHotCold(s) {
+  show("hc");
+  const st = s.state;
+  const turnName = hcName(st, st.turn, s.you);
+  $("hc-quit").classList.toggle("hidden", !s.host);
+  $("hc-label").textContent = st.solo
+    ? `${s.difficulty} · ${st.digs_left} dig${st.digs_left === 1 ? "" : "s"} left`
+    : `${st.players.length} players · ${s.difficulty}`;
+
+  const chips = $("hc-players");
+  chips.innerHTML = "";
+  if (!st.solo) {
+    st.players.forEach((p, i) => {
+      const c = document.createElement("div");
+      const turn = i === st.turn && st.stage === "turn";
+      c.className = "hp-chip" + (i === s.you ? " you" : "") + (turn ? " turn" : "") + (p.left ? " out" : "");
+      c.innerHTML = "<i></i><span></span>";
+      c.querySelector("i").style.background = p.hex;
+      c.querySelector("span").textContent = `${hcName(st, i, s.you)} · ${p.digs}`;
+      chips.appendChild(c);
+    });
+  }
+
+  // The map: the digs, the cursor, and the treasure once it's out.
+  const map = $("hc-map");
+  map.innerHTML = "";
+  const width = `${(100 * (2 * st.zone + 1)) / st.leds}%`;
+  const place = (led, cls, color) => {
+    const i = document.createElement("i");
+    i.className = cls;
+    i.style.left = `${(100 * (led + 0.5)) / st.leds}%`;
+    i.style.width = width;
+    if (color) i.style.background = color;
+    map.appendChild(i);
+  };
+  st.digs.forEach((d, k) => place(d.led, k === st.digs.length - 1 ? "" : "old", HC_HEATS[d.heat][1]));
+  if (st.treasure !== null) place(st.treasure, "treasure");
+  else if (st.stage === "turn") place(st.aim, "cursor");
+
+  const myTurn = st.status === "playing" && st.stage === "turn" && st.turn === s.you;
+  const slider = $("hc-slider");
+  slider.max = st.leds - 1;
+  if (myTurn && !hcMyTurn && navigator.vibrate) navigator.vibrate(40);
+  if (!myTurn || !hcMyTurn) slider.value = st.aim; // follow whoever's aiming; mine is mine
+  hcMyTurn = myTurn;
+  for (const id of ["hc-slider", "hc-down", "hc-up", "hc-dig"]) $(id).disabled = !myTurn;
+
+  const last = st.digs[st.digs.length - 1];
+  if (st.digs.length > hcDigs && last && navigator.vibrate) {
+    navigator.vibrate(last.heat === "burning" || last.heat === "found" ? [80, 50, 80] : 25);
+  }
+  hcDigs = st.digs.length;
+
+  let msg, sub;
+  if (st.stage === "intro") {
+    [msg, sub] = ["Hiding the treasure…", "Watch the strip: every dig glows from icy (far) to red (close)"];
+  } else if (st.stage === "reveal") {
+    if (st.status === "won") {
+      [msg, sub] = [st.winner === s.you ? "You found it! 💰" : `${turnName} found it! 💰`, "The treasure is blinking on the strip"];
+    } else {
+      [msg, sub] = ["Out of digs", "Here's where it was hiding"];
+    }
+  } else if (st.stage === "glow") {
+    const who = last.player === s.you ? "Your dig" : `${hcName(st, last.player, s.you)}'s dig`;
+    [msg, sub] = [`${HC_HEATS[last.heat][0]} ${HC_EMOJI[last.heat]}`, `${who} · the marker stays on the strip`];
+  } else if (myTurn) {
+    const lastHint = last ? `Last dig: ${HC_HEATS[last.heat][0].replace("!", "")} · ` : "";
+    const time = st.turn_left !== null ? ` · ${st.turn_left}s` : "";
+    [msg, sub] = ["Your turn!", `${lastHint}slide to aim, then dig${time}`];
+  } else {
+    [msg, sub] = [`${turnName}'s turn`, st.turn_left !== null ? `${st.turn_left}s left · watch the white light` : ""];
+  }
+  $("hc-msg").textContent = msg;
+  $("hc-sub").textContent = sub;
+}
+
+// Aiming moves the cursor on the strip, at most ~10 times a second.
+function hcAim() {
+  if (hcAimTimer) return;
+  hcAimTimer = setTimeout(() => {
+    hcAimTimer = null;
+    send({ type: "input", action: { aim: Number($("hc-slider").value) } });
+  }, 100);
+}
+$("hc-slider").oninput = hcAim;
+for (const [id, step] of [["hc-down", -1], ["hc-up", 1]]) {
+  $(id).onclick = () => {
+    const slider = $("hc-slider");
+    slider.value = Number(slider.value) + step;
+    hcAim();
+  };
+}
+$("hc-dig").onclick = () => {
+  if (!hcMyTurn) return;
+  send({ type: "input", action: { dig: Number($("hc-slider").value) } });
+  if (navigator.vibrate) navigator.vibrate(15);
+};
+
 // --- ping pong ----------------------------------------------------------------
 
 function pongName(st, i, you) {
@@ -1058,6 +1191,21 @@ function renderResult(s) {
     }
     return;
   }
+  if (s.game.id === "hot_cold") {
+    const n = st.digs.length;
+    const digs = `${n} dig${n === 1 ? "" : "s"}`;
+    if (st.solo) {
+      $("result-emoji").textContent = won ? "💰" : "🕳️";
+      $("result-title").textContent = won ? (mine ? "You found the treasure!" : "They found it!") : "The treasure stayed hidden";
+      $("result-sub").textContent = `${won ? `In ${digs}` : `${digs} used`} · ${s.difficulty}`;
+    } else {
+      const w = st.winner;
+      $("result-emoji").textContent = "💰";
+      $("result-title").textContent = w === s.you ? "You found the treasure! 🎉" : `${capitalize(st.players[w].color)} found it!`;
+      $("result-sub").textContent = `After ${digs} between ${st.players.length} players`;
+    }
+    return;
+  }
   if (s.game.id === "morse") {
     const word = (st.word || "").toUpperCase();
     const w = st.winners;
@@ -1124,7 +1272,7 @@ function toast(text) {
 // --- buttons -------------------------------------------------------------------
 
 $("start-btn").onclick = () => startGame(selectedGame);
-$("quit-btn").onclick = $("tap-quit").onclick = $("sumo-quit").onclick = $("simon-quit").onclick = $("pong-quit").onclick = $("morse-quit").onclick = $("rl-quit").onclick = $("hp-quit").onclick = () => {
+$("quit-btn").onclick = $("tap-quit").onclick = $("sumo-quit").onclick = $("simon-quit").onclick = $("pong-quit").onclick = $("morse-quit").onclick = $("rl-quit").onclick = $("hp-quit").onclick = $("hc-quit").onclick = () => {
   if (confirm("Quit this game?")) send({ type: "stop" });
 };
 $("again-btn").onclick = () => {

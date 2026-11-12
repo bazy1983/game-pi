@@ -53,7 +53,7 @@ The strip shows a target color. Mix it on your phone with red, green and blue
 sliders, and your guess appears on part of the strip next to the target. The
 closest mix wins. Surprisingly hard, and it makes people laugh.
 
-### 8. Hot and cold
+### 8. Hot and cold (built)
 One LED is secretly the treasure. Players take turns picking a spot on a
 slider; the strip glows from blue (cold) to red (hot) depending on how close
 the pick is. The fewest guesses wins.

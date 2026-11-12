@@ -158,6 +158,24 @@ when they happened on the phone, so a throw that was on its way when the fuse
 ran out still saves you. Playing alone, 2, 3 or 5 computer players join in;
 the game ends when you're out.
 
+### Hot and Cold (1–6 players)
+A treasure is hidden somewhere on the strip. Players take turns: slide on
+the phone to aim (a white light moves on the strip), then dig. The whole
+strip glows in the dig's heat, from icy (far away) through blue, cyan,
+yellow and orange to red (very close), and a marker in that color stays
+where you dug, so everyone can narrow it down. Whoever digs it up wins.
+Playing alone, you have a number of digs; with more players, each turn has
+a time limit and passes if it runs out.
+
+| Difficulty | Treasure size | Digs alone | Turn time |
+|---|---|---|---|
+| Easy | 6% of the strip | 10 | 30 s |
+| Medium | 3% | 8 | 25 s |
+| Hard | about 1% (3 LEDs on a 150-LED strip) | 6 | 20 s |
+
+Heat, by distance as a share of the strip: burning under 4%, hot under 8%,
+warm under 15%, cool under 25%, cold under 40%, freezing beyond.
+
 ## Lights
 
 Ambient effects that play on the strip whenever nobody is playing: ✨ Lights

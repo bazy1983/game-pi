@@ -229,6 +229,26 @@
     <button id="hp-pad" class="pad hp-pad"><span id="hp-pad-text"></span></button>
   </section>
 
+  <!-- Hot and Cold -->
+  <section id="view-hc" class="view tap hidden">
+    <header class="hud">
+      <div class="label" id="hc-label"></div>
+      <button id="hc-quit" class="quit hidden">Quit</button>
+    </header>
+    <div id="hc-players" class="hp-players"></div>
+    <div class="sumo-msg"><span id="hc-msg"></span><small id="hc-sub"></small></div>
+    <!-- The strip, bottom on the left: the digs so far and where you're aiming -->
+    <div id="hc-map" class="hc-map"></div>
+    <div class="slider-ends muted"><span>Bottom of the strip</span><span>Top</span></div>
+    <div class="hc-aim">
+      <button id="hc-down" class="pill" aria-label="Aim lower">−</button>
+      <input id="hc-slider" class="slider" type="range" min="0" step="1" aria-label="Where to dig">
+      <button id="hc-up" class="pill" aria-label="Aim higher">+</button>
+    </div>
+    <button id="hc-dig" class="primary">Dig here</button>
+    <div id="hc-legend" class="hc-legend"></div>
+  </section>
+
   <!-- Ping Pong -->
   <section id="view-pong" class="view tap hidden">
     <header class="hud">

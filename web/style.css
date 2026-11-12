@@ -343,3 +343,21 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
   .title-row .icon-pill { padding: 8px 9px; }
 }
 @media (max-width: 340px) { .title-row h1 { font-size: 21px; } }
+
+/* --- hot and cold --------------------------------------------------------- */
+
+.hp-chip.turn { background: #262c3a; color: #eef1f6; box-shadow: inset 0 0 0 2px #eef1f6; }
+.hc-map { position: relative; height: 34px; border-radius: 8px; background: #161a23; overflow: hidden; margin-top: 4px; }
+.hc-map i { position: absolute; top: 0; bottom: 0; min-width: 4px; transform: translateX(-50%); }
+.hc-map i.old { opacity: .55; top: 6px; bottom: 6px; border-radius: 3px; }
+.hc-map i.cursor { background: #eef1f6; top: 0; bottom: 0; box-shadow: 0 0 8px #eef1f6; }
+.hc-map i.treasure { background: #ffb414; box-shadow: 0 0 10px #ffb414; animation: blink .5s steps(2) infinite; }
+.hc-aim { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.hc-aim .pill { min-width: 46px; height: 42px; font-size: 22px; padding: 0; }
+.hc-aim .slider { flex: 1; }
+.hc-aim .pill:disabled, .hc-aim .slider:disabled { opacity: .35; }
+#hc-dig { margin-top: 14px; }
+.hc-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 12px; margin-top: 18px; font-size: 13px; color: #8a93a6; }
+.hc-legend span { display: flex; align-items: center; gap: 5px; }
+.hc-legend i { width: 10px; height: 10px; border-radius: 50%; }
+#view-hc .slider-ends { margin-top: 6px; }
