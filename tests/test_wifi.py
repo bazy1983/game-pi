@@ -1,9 +1,11 @@
 import asyncio
+import tempfile
 import unittest
+from pathlib import Path
 
 from ledgames import wifi as w
 from ledgames.device import Device
-from ledgames.wifi import Wifi, parse_scan, split_terse
+from ledgames.wifi import Wifi, parse_scan, signal_dbm, signal_quality, split_terse
 from ledgames.wifi_fake import FakeHotspot, FakeNmcli, Profile
 
 DEVICE = Device(id="93d5", hotspot_password="abcdefghjk")
@@ -35,6 +37,25 @@ class ParseTest(unittest.TestCase):
         out = "Home:40:WPA2\nHome:80:WPA2\n:90:WPA2\nCafe:30:\nLED Games 93D5:99:WPA2\nbad line\n"
         nets = parse_scan(out, exclude="LED Games 93D5")
         self.assertEqual([(n.ssid, n.signal, n.secure) for n in nets], [("Home", 80, True), ("Cafe", 30, False)])
+
+
+WIRELESS = """Inter-| sta-|   Quality        |   Discarded packets               | Missed | WE
+ face | tus | link level noise |  nwid  crypt   frag  retry   misc | beacon | 22
+ wlan0: 0000   58.  -52.  -256        0      0      0    566      0        0
+"""
+
+
+class SignalTest(unittest.TestCase):
+    def test_signal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stats = Path(tmp) / "wireless"
+            self.assertIsNone(signal_dbm(stats=stats))  # no such file
+            stats.write_text(WIRELESS)
+            self.assertEqual(signal_dbm(stats=stats), -52)
+            self.assertIsNone(signal_dbm("wlan1", stats=stats))
+            stats.write_text(WIRELESS.splitlines(keepends=True)[0] + WIRELESS.splitlines(keepends=True)[1])
+            self.assertIsNone(signal_dbm(stats=stats))  # not connected: no line
+        self.assertEqual([signal_quality(d) for d in (-40, -60, -70, -85)], ["excellent", "good", "fair", "weak"])
 
 
 class WifiTest(unittest.IsolatedAsyncioTestCase):

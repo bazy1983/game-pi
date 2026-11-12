@@ -99,6 +99,16 @@ class WebTest(unittest.IsolatedAsyncioTestCase):
         r = await self.client.post("/api/device/wifi-setup", json={})
         self.assertEqual(r.status, 400)
 
+    async def test_signal(self):
+        await self.start()
+        server = self.client.app["server"]
+        with tempfile.TemporaryDirectory() as tmp:
+            server.wireless_stats = Path(tmp) / "wireless"
+            self.assertIsNone((await (await self.client.get("/api/device")).json())["signal"])
+            server.wireless_stats.write_text("header\nheader\n wlan0: 0000   58.  -52.  -256  0 0 0 0 0 0\n")
+            body = await (await self.client.get("/api/device")).json()
+            self.assertEqual(body["signal"], {"dbm": -52, "quality": "excellent"})
+
     async def test_no_network_change_during_a_game(self):
         wifi = Wifi(DEVICE, run=(nm := FakeNmcli()), hotspot=FakeHotspot(nm))
         wifi.mode = "online"

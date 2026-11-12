@@ -1200,10 +1200,25 @@ async function pollDevice() {
   pollDevice.timer = setTimeout(pollDevice, 3000);
 }
 
+const SIGNAL = { excellent: [4, "Excellent"], good: [3, "Good"], fair: [2, "Fair"], weak: [1, "Weak"] };
+
+function signalBars(lit) {
+  const bars = [0, 1, 2, 3].map((k) => {
+    const h = 4 + k * 3;
+    return `<rect x="${k * 5}" y="${14 - h}" width="3" height="${h}" rx="1" class="${k < lit ? "on" : ""}"/>`;
+  });
+  return `<svg viewBox="0 0 18 14" aria-hidden="true">${bars.join("")}</svg>`;
+}
+
 function renderDevice(d) {
   $("device-name").textContent = d.name;
   $("device-version").textContent = d.version;
   $("device-wifi").textContent = d.wifi ? (d.wifi.ssid || (d.wifi.mode === "online" ? "Ethernet" : d.wifi.mode)) : "—";
+  $("signal-row").classList.toggle("hidden", !d.signal);
+  if (d.signal) {
+    const [bars, word] = SIGNAL[d.signal.quality];
+    $("device-signal").innerHTML = signalBars(bars) + `<span>${word} (${d.signal.dbm} dBm)</span>`;
+  }
   $("device-address").textContent = d.local_url ? d.local_url.replace("http://", "") : location.host;
   const u = d.update;
   $("update-status").textContent = (UPDATE_TEXT[u.status] || UPDATE_TEXT.idle)(u);

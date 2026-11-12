@@ -55,7 +55,7 @@ from .leds import MAX_LEDS
 from .leds.sim import SimStrip
 from .lights import PALETTES, palette_gradient
 from .updater import Updater
-from .wifi import Wifi
+from .wifi import Wifi, signal_dbm, signal_quality
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 # A closed browser and a network blip look the same to the server, so a
@@ -80,6 +80,7 @@ class Server:
         self.wifi = wifi
         self.updater = updater
         self.state_dir = state_dir  # where device page settings are saved (None: not saved)
+        self.wireless_stats = Path("/proc/net/wireless")  # the Wi-Fi signal (tests point it elsewhere)
         self._save_lights: asyncio.TimerHandle | None = None
         self._save_mic: asyncio.TimerHandle | None = None
         self.clients: dict[web.WebSocketResponse, str] = {}  # socket → client id
@@ -263,6 +264,13 @@ class Server:
         error = self.wifi.connect(str(body.get("ssid", "")), str(body.get("password", "")))
         return web.json_response({"error": error}, status=400 if error else 200)
 
+    def signal(self) -> dict | None:
+        """The unit's Wi-Fi signal, while it's on the customer's network."""
+        if self.wifi and self.wifi.mode != "online":
+            return None  # running the setup hotspot, or still joining
+        dbm = signal_dbm(stats=self.wireless_stats)
+        return {"dbm": dbm, "quality": signal_quality(dbm)} if dbm is not None else None
+
     async def device_state(self, _: web.Request) -> web.Response:
         return web.json_response(
             {
@@ -273,6 +281,7 @@ class Server:
                 "max_leds": MAX_LEDS,
                 "mic": self.mic_state(),
                 "wifi": {k: v for k, v in self.wifi.state().items() if k != "networks"} if self.wifi else None,
+                "signal": self.signal(),
                 "update": self.updater.state() if self.updater else {"version": __version__, "status": "off"},
                 "busy": self.engine.busy,
             }

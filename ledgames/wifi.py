@@ -100,6 +100,35 @@ def parse_scan(out: str, exclude: str = "") -> list[Network]:
     return sorted(best.values(), key=lambda n: -n.signal)
 
 
+def signal_dbm(iface: str = "wlan0", stats: Path = Path("/proc/net/wireless")) -> int | None:
+    """The Wi-Fi signal level in dBm (e.g. -52), from the kernel's link
+    stats; None with no Wi-Fi link."""
+    try:
+        lines = stats.read_text().splitlines()
+    except OSError:
+        return None
+    for line in lines[2:]:
+        name, _, rest = line.partition(":")
+        f = rest.split()
+        if name.strip() == iface and len(f) >= 3:
+            try:
+                dbm = int(float(f[2]))
+            except ValueError:
+                return None
+            return dbm if -110 < dbm < 0 else None
+    return None
+
+
+def signal_quality(dbm: int) -> str:
+    if dbm >= -55:
+        return "excellent"
+    if dbm >= -67:
+        return "good"
+    if dbm >= -75:
+        return "fair"
+    return "weak"
+
+
 class Hotspot:
     """The setup hotspot, run with hostapd and dnsmasq.
 

@@ -303,12 +303,12 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 /* --- invite & device ----------------------------------------------------- */
 
 .title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.pills { display: flex; gap: 8px; }
-.icon-pill { display: flex; align-items: center; padding: 9px 12px; }
+.pills { display: flex; gap: 6px; }
+.title-row h1 { white-space: nowrap; }
+.icon-pill { display: flex; align-items: center; padding: 9px 10px; }
 .icon-pill svg { width: 18px; height: 18px; }
 .pill { background: #161a23; color: #eef1f6; padding: 9px 16px; border-radius: 999px; font-size: 15px; font-weight: 600; }
 .center-pill { align-self: center; margin-top: 8px; }
-.footer-link { margin-top: auto; padding: 28px 0 4px; background: none; color: #8a93a6; font-size: 15px; }
 
 .modal { position: fixed; inset: 0; z-index: 20; background: rgba(5, 6, 9, .78); display: flex; align-items: center; justify-content: center; padding: 20px; }
 .sheet { width: 100%; max-width: 380px; background: #161a23; border-radius: 20px; padding: 24px; display: flex; flex-direction: column; text-align: center; }
@@ -328,3 +328,15 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 }
 .leds-row input:focus { outline: none; border-color: #eef1f6; }
 .leds-row .secondary { margin-top: 0; padding: 18px 24px; }
+
+.signal { display: flex; align-items: center; gap: 8px; }
+.signal svg { width: 18px; height: 14px; }
+.signal rect { fill: #3a4152; }
+.signal rect.on { fill: #eef1f6; }
+@media (max-width: 400px) { /* small phones: the title and the three header buttons on one line */
+  .title-row { gap: 8px; }
+  .title-row h1 { font-size: 24px; }
+  .title-row .pill { padding: 8px 12px; font-size: 14px; }
+  .title-row .icon-pill { padding: 8px 9px; }
+}
+@media (max-width: 340px) { .title-row h1 { font-size: 21px; } }
