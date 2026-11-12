@@ -624,14 +624,33 @@ function morseReset() {
   $("morse-input").value = "";
 }
 
+// The chart is also a keyboard: tap a letter to type it (no phone keyboard
+// covering the chart), ⌫ to delete.
 (function buildMorseChart() {
   const chart = $("morse-chart");
   for (const [letter, code] of Object.entries(MORSE)) {
-    const d = document.createElement("div");
-    d.innerHTML = `<b>${letter}</b><span>${code.replaceAll(".", "·").replaceAll("-", "–")}</span>`;
-    chart.appendChild(d);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = `<b>${letter}</b><span>${code.replaceAll(".", "·").replaceAll("-", "–")}</span>`;
+    b.onclick = () => morseKey(letter);
+    chart.appendChild(b);
   }
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "backspace";
+  back.textContent = "⌫";
+  back.setAttribute("aria-label", "Delete");
+  back.onclick = () => morseKey(null);
+  chart.appendChild(back);
 })();
+
+function morseKey(letter) {
+  const input = $("morse-input");
+  if (input.disabled) return;
+  input.value = letter ? input.value + letter : input.value.slice(0, -1);
+  input.dispatchEvent(new Event("input")); // trims to the word's length, updates the slots
+  if (navigator.vibrate) navigator.vibrate(8);
+}
 
 function renderMorse(s) {
   show("morse");
@@ -658,6 +677,7 @@ function renderMorse(s) {
   const input = $("morse-input");
   input.maxLength = st.length;
   input.disabled = me.out;
+  $("morse-chart").classList.toggle("disabled", me.out);
   renderMorseSlots(st);
   $("morse-submit").disabled = me.out || st.stage === "intro" || input.value.length !== st.length;
 
