@@ -51,6 +51,11 @@ const SPECTATE_LINES = {
     ["Tick… tick… tick…", "Someone's about to get burned. Grab a seat 🍿"],
     ["Pass it on!", "The potato is flying around the strip 🔥"],
   ],
+  tower: [
+    ["Construction site!", "Someone is stacking blocks up the strip. Don't bump the table 🏗️"],
+    ["Steady… steady…", "One wrong tap and the blocks get smaller. Watch the strip!"],
+    ["How high can it go?", "Grab a seat and watch the tower grow 🍿"],
+  ],
   ping_pong: [
     ["Rally in progress!", "Back and forth, faster and faster. Watch the strip! 🏓"],
     ["Ping… pong… ping…", "Don't blink, the ball speeds up."],
@@ -151,6 +156,8 @@ function onSession(s) {
       hpLast = { holder: null, out: false };
       hcMyTurn = false;
       hcDigs = 0;
+      towerDrops = 0;
+      towerBestBefore = towerBest(s.difficulty);
     }
     sawPlaying = true;
     if (s.role !== "player") renderSpectate(s);
@@ -162,6 +169,7 @@ function onSession(s) {
     else if (s.game.id === "red_light") renderRedLight(s);
     else if (s.game.id === "hot_potato") renderHotPotato(s);
     else if (s.game.id === "hot_cold") renderHotCold(s);
+    else if (s.game.id === "tower") renderTower(s);
     else renderPlay(s.state);
   } else if (s.phase === "ended" && sawPlaying) {
     if (wasPhase !== "ended") lockResult();
@@ -1017,6 +1025,115 @@ $("hc-dig").onclick = () => {
   if (navigator.vibrate) navigator.vibrate(15);
 };
 
+// --- tower stack ----------------------------------------------------------------
+
+let towerDrops = 0; // drops seen, to buzz on a new one
+let towerBestBefore = 0; // this phone's best solo tower before this game
+
+function towerBest(difficulty) {
+  return (JSON.parse(localStorage.towerBest || "{}"))[difficulty] || 0;
+}
+
+function towerName(st, i, you) {
+  return i === you ? "You" : capitalize(st.players[i].color);
+}
+
+function blocks(n) {
+  return `${n} block${n === 1 ? "" : "s"}`;
+}
+
+// A tower's score, in what decides the winner.
+function towerScore(st, p) {
+  return st.goal === "height" ? `${p.height} LEDs high` : blocks(p.blocks);
+}
+
+function renderTower(s) {
+  show("tower");
+  const st = s.state;
+  const turnName = towerName(st, st.turn, s.you);
+  const myTurn = st.turn === s.you;
+  $("tower-quit").classList.toggle("hidden", !s.host);
+  $("tower-label").textContent = st.solo
+    ? `${s.difficulty}` + (towerBestBefore ? ` · best ${blocks(towerBestBefore)}` : "")
+    : `${st.players.length} players · ${st.goal === "height" ? "tallest wins" : "most blocks wins"} · ${s.difficulty}`;
+
+  const chips = $("tower-players");
+  chips.innerHTML = "";
+  if (!st.solo) {
+    st.players.forEach((p, i) => {
+      const c = document.createElement("div");
+      const playing = i === st.turn && !p.done;
+      c.className = "hp-chip" + (i === s.you ? " you" : "") + (playing ? " turn" : "") + (p.left ? " out" : "");
+      c.innerHTML = "<i></i><span></span>";
+      c.querySelector("i").style.background = p.hex;
+      const score = p.done || playing ? ` · ${st.goal === "height" ? p.height : p.blocks}` + (p.topped ? " 🏁" : "") : "";
+      c.querySelector("span").textContent = towerName(st, i, s.you) + score + (i === st.leader ? " 👑" : "");
+      chips.appendChild(c);
+    });
+  }
+
+  const last = st.last;
+  if (st.drops > towerDrops && last && myTurn && navigator.vibrate) {
+    navigator.vibrate(last.missed ? [200, 80, 300] : last.perfect ? [30, 40, 30] : 25);
+  }
+  towerDrops = st.drops;
+
+  let cls = "wait", text, sub = "", msg, hint;
+  const lead = st.leader !== null ? st.players[st.leader] : null;
+  const toBeat = lead ? `${towerScore(st, lead)} to beat` : "";
+  if (st.stage === "intro") {
+    text = st.countdown;
+    msg = myTurn ? (st.solo ? "Get ready…" : "Your turn!") : `${turnName}'s turn`;
+    hint = myTurn ? "Tap when the white block sits right on your tower" : toBeat || "Watch the strip";
+    if (myTurn && toBeat) hint = `${toBeat} · tap when the white block sits on your tower`;
+  } else if (st.stage === "crumble" || st.stage === "over") {
+    text = "🏚️";
+    msg = `${myTurn ? "Your" : `${turnName}'s`} tower: ${towerScore(st, st.players[st.turn])}`;
+    hint = st.solo ? "" : "Next tower coming…";
+  } else if (st.stage === "fall") {
+    text = "MISS";
+    msg = myTurn ? "Missed!" : `${turnName} missed!`;
+    hint = `Tower of ${towerScore(st, st.players[st.turn])}`;
+  } else if (st.stage === "topped") {
+    text = "🏁";
+    msg = myTurn ? "You reached the top!" : `${turnName} reached the top!`;
+    hint = `${blocks(st.blocks)} high`;
+  } else if (!myTurn) {
+    text = st.goal === "height" ? st.height : st.blocks;
+    msg = `${turnName} is building`;
+    hint = toBeat || "Watch the strip";
+  } else {
+    // The block is sliding (or the last cut is fading): tap to drop.
+    cls = "";
+    text = "DROP";
+    sub = st.goal === "height" ? `${st.height} LEDs high` : blocks(st.blocks);
+    if (last && st.stage === "cut") cls = last.perfect ? "perfect" : "cut";
+    if (!last) [msg, hint] = ["Tap to drop!", "Land it right on top of the tower"];
+    else if (last.grew) [msg, hint] = ["Perfect × 3! 🌟", "Your block grew back by one"];
+    else if (last.perfect) [msg, hint] = ["Perfect!", st.streak > 1 ? `${st.streak} in a row` : "Nothing cut off"];
+    else [msg, hint] = [`Cut ${last.cut} LED${last.cut === 1 ? "" : "s"}`, `The block is ${st.block} LED${st.block === 1 ? "" : "s"} now`];
+    if (lead) hint += ` · ${toBeat}`;
+  }
+  const pad = $("tower-pad");
+  pad.className = "pad tower-pad" + (cls ? ` ${cls}` : "");
+  $("tower-pad-text").textContent = text;
+  $("tower-pad-sub").textContent = sub;
+  $("tower-msg").textContent = msg;
+  $("tower-sub").textContent = hint;
+}
+
+{
+  const pad = $("tower-pad");
+  pad.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    send({ type: "input", action: { tap: true, at: serverNow() } });
+    pad.classList.add("pressed");
+    if (navigator.vibrate) navigator.vibrate(10);
+  });
+  for (const ev of ["pointerup", "pointercancel", "pointerleave"]) pad.addEventListener(ev, () => pad.classList.remove("pressed"));
+  pad.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+
 // --- ping pong ----------------------------------------------------------------
 
 function pongName(st, i, you) {
@@ -1191,6 +1308,32 @@ function renderResult(s) {
     }
     return;
   }
+  if (s.game.id === "tower") {
+    if (st.solo) {
+      const me = st.players[0];
+      const best = Math.max(towerBestBefore, me.blocks);
+      if (mine && best > towerBest(s.difficulty)) {
+        localStorage.towerBest = JSON.stringify({ ...JSON.parse(localStorage.towerBest || "{}"), [s.difficulty]: best });
+      }
+      const record = mine && me.blocks > towerBestBefore && towerBestBefore > 0;
+      $("result-emoji").textContent = me.topped ? "🏁" : record ? "🌟" : "🏗️";
+      $("result-title").textContent = me.topped ? (mine ? "You reached the top!" : "They reached the top!") : `A tower of ${blocks(me.blocks)}`;
+      const extra = record ? "New best!" : mine && towerBestBefore ? `Best: ${blocks(towerBestBefore)}` : `${me.perfects} perfect`;
+      $("result-sub").textContent = `${extra} · ${s.difficulty}`;
+    } else {
+      const w = st.winners;
+      const tall = st.goal === "height";
+      const all = st.players.map((p, i) => `${towerName(st, i, mine ? s.you : null)} ${tall ? p.height : p.blocks}`).join(" · ");
+      $("result-emoji").textContent = w.length === 1 ? "🏆" : "🤝";
+      if (w.length === 1) {
+        $("result-title").textContent = w[0] === s.you ? "Your tower wins! 🎉" : `${capitalize(st.players[w[0]].color)}'s tower wins!`;
+      } else {
+        $("result-title").textContent = w.includes(s.you) ? "You share the win! 🎉" : "It's a tie!";
+      }
+      $("result-sub").textContent = `${tall ? "LEDs high" : "Blocks"}: ${all}`;
+    }
+    return;
+  }
   if (s.game.id === "hot_cold") {
     const n = st.digs.length;
     const digs = `${n} dig${n === 1 ? "" : "s"}`;
@@ -1272,7 +1415,7 @@ function toast(text) {
 // --- buttons -------------------------------------------------------------------
 
 $("start-btn").onclick = () => startGame(selectedGame);
-$("quit-btn").onclick = $("tap-quit").onclick = $("sumo-quit").onclick = $("simon-quit").onclick = $("pong-quit").onclick = $("morse-quit").onclick = $("rl-quit").onclick = $("hp-quit").onclick = $("hc-quit").onclick = () => {
+$("quit-btn").onclick = $("tap-quit").onclick = $("sumo-quit").onclick = $("simon-quit").onclick = $("pong-quit").onclick = $("morse-quit").onclick = $("rl-quit").onclick = $("hp-quit").onclick = $("hc-quit").onclick = $("tower-quit").onclick = () => {
   if (confirm("Quit this game?")) send({ type: "stop" });
 };
 $("again-btn").onclick = () => {

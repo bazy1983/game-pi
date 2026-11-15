@@ -8,6 +8,7 @@ from .ping_pong import PingPong
 from .red_light import RedLight
 from .simon import Simon
 from .sumo import Sumo
+from .tower import Tower
 
 # Register new games here.
-GAMES: dict[str, type[Game]] = {g.info.id: g for g in [ColorShooter, FastTap, Sumo, Simon, PingPong, Morse, RedLight, HotPotato, HotCold]}
+GAMES: dict[str, type[Game]] = {g.info.id: g for g in [ColorShooter, FastTap, Sumo, Simon, PingPong, Morse, RedLight, HotPotato, HotCold, Tower]}

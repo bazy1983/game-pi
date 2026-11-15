@@ -176,6 +176,29 @@ a time limit and passes if it runs out.
 Heat, by distance as a share of the strip: burning under 4%, hot under 8%,
 warm under 15%, cool under 25%, cold under 40%, freezing beyond.
 
+### Tower Stack (1–6 players)
+Your tower starts as a block of your color at the bottom of the strip. A
+white block slides up and down over its top: tap to drop it right on top of
+the tower. Any gap or overlap is cut off (it flashes red), so the next block
+is that much shorter, and every block slides a little faster. Miss
+completely and the tower is finished. Three perfect drops in a row grow the
+block back by one LED. Reach the top of the strip to top out.
+
+With more players, each builds a tower in turn. Pick the goal before
+starting: **most blocks wins** (ties go to the taller tower) or **tallest
+tower wins**, counted in LEDs (ties go to more blocks), where keeping your
+blocks big matters more than stacking many. The best tower so far blinks as a mark to
+beat. Playing alone, the phone remembers your best for each difficulty.
+
+| Difficulty | First block | Speed (first block) | Speed-up per block |
+|---|---|---|---|
+| Easy | 6% of the strip | 8% of the strip per second | 4% |
+| Medium | 4.5% | 11% | 5% |
+| Hard | 3% | 14% | 6% |
+
+Blocks never get faster than 2.5 × the first one. Taps count from when they
+happened on the phone, so Wi-Fi delay doesn't move the block.
+
 ## Lights
 
 Ambient effects that play on the strip whenever nobody is playing: ✨ Lights

@@ -28,7 +28,7 @@ tap is out. A quick, funny elimination game that's easy to explain.
 
 ## Skill games, solo or taking turns
 
-### 4. Tower stack
+### 4. Tower stack (built)
 A block of LEDs slides up and down above your tower. Tap to drop it: whatever
 hangs past the block below is cut off, so the blocks shrink and keep getting
 faster. Build as high as you can, or take turns and compare heights.
