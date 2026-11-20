@@ -205,9 +205,10 @@ Ambient effects that play on the strip whenever nobody is playing: ✨ Lights
 on the home screen. A game takes over the strip; when it's over, the lights
 fade back in. The choice is saved on the unit, so it survives a reboot.
 
-- Effects: Flow, Aurora, Fire (rises from the bottom), Twinkle, Meteor,
-  Ripples, Bouncing balls, Chase, Breathe, Still (the palette spread over the
-  strip; with one color, a solid color).
+- Effects: Flow, Aurora, Fire (rises from the bottom), Twinkle, Flash
+  sparkle, Meteor, Scanner, Fireworks, Ripples, Bouncing balls, Chase,
+  Running lights, Color wipe, Breathe, Still (the palette spread over the
+  strip; with one color, a solid color). See `docs/animation-effects.md`.
 - Colors: Rainbow, Fire, Ocean, Forest, Sunset, Party, Ice, or a gradient
   of your own. Every effect works with every palette.
 - Your gradient: up to 12 colors along the strip, bottom to top. Tap the bar

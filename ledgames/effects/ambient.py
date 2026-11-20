@@ -348,6 +348,110 @@ class Bounce(Effect):
         pixels[:] = [scale(c, x) if x else OFF for c, x in zip(tcolor, trail)]
 
 
+class Scanner(Effect):
+    """A glowing eye sweeps up and down the strip with a fading tail, like
+    K.I.T.T.'s scanner, slowly drifting through the palette."""
+
+    name = "Scanner"
+    SWEEP = 2.0  # s from one end to the other
+
+    def __init__(self, num_leds, rng):
+        super().__init__(num_leds, rng)
+        self.width = max(2, num_leds // 40)
+        self.trail = [0.0] * num_leds
+        self.last: int | None = None
+
+    def draw(self, pixels, t, dt, lut):
+        n, w = self.n, self.width
+        phase = (t / self.SWEEP) % 2
+        x = phase if phase <= 1 else 2 - phase
+        pos = int(x * (n - w))
+        decay = max(0.0, 1 - dt * 4)
+        trail = [v * decay if v > 0.02 else 0.0 for v in self.trail]
+        last = pos if self.last is None else self.last
+        for p in range(min(last, pos), max(last, pos) + w):  # everything the eye passed this frame
+            if p < n:
+                trail[p] = 1.0
+        self.trail, self.last = trail, pos
+        color = lut[int(t * 6) & 255]
+        levels = [scale(color, (k / 31) ** 2) for k in range(32)]
+        pixels[:] = [levels[int(v * 31)] for v in trail]
+
+
+class Wipe(Effect):
+    """The next palette color fills the strip from the bottom, then the one
+    after it from the top, and so on."""
+
+    name = "Color wipe"
+    WIPE = 3.0  # s per wipe, holding the full strip for the last fifth
+    STEP = 48  # palette steps between colors
+
+    def draw(self, pixels, t, dt, lut):
+        n = self.n
+        k = int(t / self.WIPE)
+        f = min(1.0, (t / self.WIPE - k) * 1.25)
+        new, old = lut[(k * self.STEP) & 255], lut[((k - 1) * self.STEP) & 255]
+        edge = int(f * n)
+        if k % 2 == 0:
+            pixels[:] = [new] * edge + [old] * (n - edge)
+        else:
+            pixels[:] = [old] * (n - edge) + [new] * edge
+
+
+class Running(Effect):
+    """Smooth waves of light run up the strip over the palette."""
+
+    name = "Running lights"
+    SIN = [math.sin(k * 2 * math.pi / 1024) for k in range(1024)]
+    WAVE = 25  # LEDs from one wave to the next
+    LEVELS = [int(((s + 1) / 2) ** 2 * 31) for s in SIN]  # wave → brightness step
+
+    def __init__(self, num_leds, rng):
+        super().__init__(num_leds, rng)
+        self.points = [(i * 1024 // self.WAVE, i * 256 // num_leds) for i in range(num_leds)]
+        self.lut: list[RGB] | None = None
+        self.table: list[RGB] = []  # palette index × 32 + brightness step → color
+
+    def draw(self, pixels, t, dt, lut):
+        if lut is not self.lut:
+            self.lut = lut
+            self.table = [scale(c, k / 31) for c in lut for k in range(32)]
+        table, levels = self.table, self.LEVELS
+        shift, drift = int(t * 1024 * 0.8), int(t * 4)
+        pixels[:] = [table[((p + drift) & 255) * 32 + levels[(x - shift) & 1023]] for x, p in self.points]
+
+
+class Sparkle(Effect):
+    """The palette glows softly over the strip while white sparks flash on it."""
+
+    name = "Flash sparkle"
+    GLOW = 0.35
+    FLASH = 0.06  # s each spark lasts
+
+    def __init__(self, num_leds, rng):
+        super().__init__(num_leds, rng)
+        self.flashes: dict[int, float] = {}  # LED → time left
+        self.lut: list[RGB] | None = None
+        self.base: list[RGB] = []
+
+    def draw(self, pixels, t, dt, lut):
+        n, rng = self.n, self.rng
+        if lut is not self.lut:
+            self.lut = lut
+            self.base = [scale(c, self.GLOW) for c in lut]
+        base, drift = self.base, int(t * 8)
+        out = [base[(i * 256 // n + drift) & 255] for i in range(n)]
+        for _ in range(_count(n * 0.3 * dt, rng)):  # a few at a time
+            self.flashes[rng.randrange(n)] = self.FLASH
+        for i, left in list(self.flashes.items()):
+            if left <= 0:
+                del self.flashes[i]
+                continue
+            out[i] = WHITE
+            self.flashes[i] = left - dt
+        pixels[:] = out
+
+
 class Level(Effect):
     """A sound level meter: a bar rises up the strip with the sound, colored
     along the palette, and a dot marks the recent peak, then falls (faster
@@ -394,11 +498,15 @@ EFFECTS: dict[str, type[Effect]] = {
     "aurora": Aurora,
     "fire": Fire,
     "twinkle": Twinkle,
+    "sparkle": Sparkle,
     "meteor": Meteor,
+    "scanner": Scanner,
     "fireworks": Fireworks,
     "ripples": Ripples,
     "bounce": Bounce,
     "chase": Chase,
+    "running": Running,
+    "wipe": Wipe,
     "breathe": Breathe,
     "still": Still,
     "level": Level,
