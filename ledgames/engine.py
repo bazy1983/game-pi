@@ -21,7 +21,9 @@ from .colors import OFF, RGB
 from .effects.lineup import draw_lineup
 from .effects.status import draw_flash, draw_status
 from .effects.strip_test import TEST_TIME, draw_test
+from .effects.wiring import PATTERN_TIME, PATTERNS, RED, GREEN, draw_check, draw_color, first_leds
 from .games import GAMES, Game
+from .layout import Layout
 from .lights import Lights
 
 
@@ -34,11 +36,15 @@ class Lobby:
 
 
 class Engine:
-    def __init__(self, strip, fps: int = 30, clock: Callable[[], float] = time.monotonic):
+    def __init__(
+        self, strip, fps: int = 30, clock: Callable[[], float] = time.monotonic, layout: Layout | None = None
+    ):
         self.strip = strip
         self.fps = fps
         self.clock = clock
-        self.pixels = [OFF] * strip.num_leds
+        # What everything draws on; turned into the chain's order for the strip.
+        self.layout = layout or Layout.strip(strip.num_leds)
+        self.pixels = [OFF] * self.layout.size
         self.lobby: Lobby | None = None
         self.game: Game | None = None
         self.host: str | None = None
@@ -48,7 +54,8 @@ class Engine:
         self.status: str | None = None
         self._flash: tuple[RGB, float, float] | None = None  # color, time left, duration
         self._test: float | None = None  # how far the strip test is
-        self.lights = Lights()  # ambient effect while no game is running
+        self._pattern: tuple[str, float] | None = None  # wiring check pattern, time left
+        self.lights = Lights(kind=self.layout.kind)  # ambient effect while no game is running
         self._last_state: dict[str, Any] | None = None
         self._t = 0.0
         self._shown = 0.0  # when the last frame started going to the strip (for the trace)
@@ -67,6 +74,8 @@ class Engine:
         if cls is None:
             return "Unknown game."
         info = cls.info
+        if info.layout != self.layout.kind:
+            return f"That game is for the LED {info.layout}."
         if difficulty not in {d.id for d in info.difficulties}:
             return "Unknown difficulty."
         clean = {}
@@ -78,6 +87,7 @@ class Engine:
         self.host = host
         self.left = set()
         self._test = None
+        self._pattern = None
         lobby = Lobby(cls, difficulty, clean, [host])
         if info.max_players == 1:
             self.lobby = lobby
@@ -134,7 +144,7 @@ class Engine:
         if lobby is None or client_id != self.host:
             return
         self.game = lobby.cls(
-            self.strip.num_leds, lobby.difficulty, lobby.settings, players=list(lobby.players), clock=self.clock
+            self.layout.size, lobby.difficulty, lobby.settings, players=list(lobby.players), clock=self.clock
         )
         self.lobby = None
         self._changed()
@@ -147,20 +157,39 @@ class Engine:
         """Light the whole strip briefly (when no game is running)."""
         self._flash = (color, duration, duration)
 
-    def set_led_count(self, num_leds: int) -> str | None:
-        """Change the number of LEDs (from the device page). Returns an error
-        message, or None."""
+    def set_layout(self, layout: Layout) -> str | None:
+        """Change the connected lights or their size (from the device page).
+        Returns an error message, or None."""
         if not self.idle:
             return "Wait until the game is over."
-        self.strip.resize(num_leds)
-        self.pixels = [OFF] * num_leds
+        self.game = None  # a finished game's end animation is for the old lights
+        self.strip.resize(layout.num_leds)
+        self.layout = layout
+        self.pixels = [OFF] * layout.size
+        self.lights.set_kind(layout.kind)
+        self._test = self._pattern = None
         return None
 
     def test_strip(self) -> str | None:
         """Play the wiring check pattern. Returns an error message, or None."""
         if not self.idle:
             return "Wait until the game is over."
+        self._pattern = None
         self._test = 0.0
+        return None
+
+    def show_pattern(self, name: str | None) -> str | None:
+        """Show one of the guided wiring check's patterns (see
+        effects/wiring.py), or None to stop. Returns an error message, or None."""
+        if name is None:
+            self._pattern = None
+            return None
+        if name not in PATTERNS or (name == "check" and self.layout.kind != "grid"):
+            return "Unknown pattern."
+        if not self.idle:
+            return "Wait until the game is over."
+        self._test = None
+        self._pattern = (name, PATTERN_TIME)
         return None
 
     def stop(self) -> None:
@@ -253,6 +282,10 @@ class Engine:
             self._test += dt
             if self._test >= TEST_TIME:
                 self._test = None
+        if self._pattern is not None:
+            name, left = self._pattern
+            self._pattern = (name, left - dt) if left > dt else None
+        chain = None  # set when a pattern goes to the chain directly
         game = self.game
         if self.lobby:
             colors = self.lobby.cls.info.player_colors[: len(self.lobby.players)]
@@ -260,6 +293,8 @@ class Engine:
         elif game is not None and not game.finished:
             game.update(dt)
             game.render(self.pixels)
+        elif self._pattern is not None:
+            chain = self._draw_pattern(self._pattern[0])
         elif self._test is not None:
             draw_test(self.pixels, self._test)
         elif self._flash:
@@ -269,7 +304,7 @@ class Engine:
             draw_flash(self.pixels, color, left, duration)
         elif self.status:
             draw_status(self.pixels, self.status, self._t)
-        elif self.lights.on:
+        elif self.lights.active:
             level = self.lights.render(self.pixels, dt)
         else:
             for i in range(len(self.pixels)):
@@ -277,5 +312,14 @@ class Engine:
         if not level:
             self.lights.pause()  # fades back in afterwards
         self._shown = time.monotonic()
-        self.strip.show(self.pixels, level or 1.0)
+        self.strip.show(chain or self.layout.to_chain(self.pixels), level or 1.0)
         self._changed()
+
+    def _draw_pattern(self, name: str) -> list[RGB] | None:
+        if name == "first":
+            return first_leds(self.layout.num_leds)
+        if name == "check":
+            draw_check(self.pixels, self.layout.width, self.layout.height)
+        else:
+            draw_color(self.pixels, RED if name == "red" else GREEN)
+        return None

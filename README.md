@@ -254,7 +254,8 @@ Every option can be passed as a flag or an environment variable.
 
 | Flag | Env | Default | |
 |---|---|---|---|
-| `--leds` | `LED_COUNT` | 250 | number of LEDs; a count saved on the device page wins over `LED_COUNT` (not over `--leds`) |
+| `--leds` | `LED_COUNT` | 250 | number of LEDs on the strip; the lights saved on the device page (a strip's count, or a grid) win over `LED_COUNT`, but `--leds` always drives a strip |
+| `--order` | `LED_ORDER` | `grb` | the LEDs' color order (`grb`, `rgb`, …); the one saved on the device page wins over `LED_ORDER` |
 | `--backend` | `LED_BACKEND` | `sim` | `sim` or `ws281x` |
 | `--pin` | `LED_PIN` | 12 | GPIO data pin |
 | `--brightness` | `LED_BRIGHTNESS` | 0.5 | global brightness 0–1 |
@@ -350,14 +351,35 @@ handshake with NetworkManager's. While it's up, NetworkManager lets go of
 
 To move a unit to another network: Device settings → Change Wi-Fi network.
 
-### LED strip
+### Connected lights: a strip or a grid
 
-Device settings → LED strip sets how many LEDs the strip has (up to 1000);
-it's saved on the unit and takes effect right away. Saving, or tapping
-**Test LEDs**, plays a wiring check: a red dot climbs from the bottom to the
-top, the strip turns red, green and blue, then the first and last LEDs blink
-white. If the blinking LED isn't the top of the strip, the count is wrong.
-Neither works during a game.
+The same unit drives an LED strip or an LED grid, on the same pin. Device
+settings → Connected lights picks which is plugged in (the LEDs can't tell
+the Pi). Each has its own games and light effects, and the phone only shows
+those. Every setting is saved on the unit and takes effect right away; none
+of them change during a game.
+
+- **LED strip:** how many LEDs it has (up to 1000). Saving, or tapping
+  **Test LEDs**, plays a wiring check: a red dot climbs from the bottom to the
+  top, the strip turns red, green and blue, then the first and last LEDs
+  blink white. If the blinking LED isn't the top of the strip, the count is
+  wrong.
+- **LED grid:** strips laid side by side, one joined to the next, so the Pi
+  sees one long chain. Set its width and height in LEDs (2–64 each, up to
+  1000 LEDs in all), whether the strips run up and down (columns) or across
+  (rows), zigzag (every other strip runs back) or all the same way, which
+  corner the first LED is in, and any dark LEDs between one strip and the
+  next (a string bent round at the turns). See `ledgames/layout.py`.
+  **Check wiring** works most of it out: the grid lights red, then green,
+  and what color you see gives the color order; then the first LEDs light
+  (white, then green), and which corner and which way give where the grid
+  starts and how its strips run. Last, a check pattern: a frame round the
+  edge, an arrow pointing up and a red dot in the top left corner.
+- **Color order:** GRB for most strips, RGB for many seed lights. Wrong, and
+  red shows as green.
+
+The simulator shows a grid too (its LEDs are GRB, so a wrong color order
+shows there as well).
 
 ### Updates
 
@@ -383,6 +405,9 @@ by hand.
    `state()`. Set `max_players` and `player_colors` in its `info` for a
    multiplayer game; the engine handles the lobby.
 2. Register it in `ledgames/games/__init__.py`.
+3. A game for the LED grid sets `layout="grid"` in its `info`; it draws on
+   a width × height canvas, by row from the top left (see `layout.py`).
+   Light effects set `layout = "grid"` the same way.
 
 The game list, difficulty and settings screens are generated from the game's
 `info`. Reusable animations live in `ledgames/effects/`.

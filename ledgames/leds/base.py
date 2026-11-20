@@ -2,6 +2,9 @@ from ..colors import OFF, RGB
 
 MA_PER_CHANNEL = 20.0  # WS2812B draws ~20 mA per fully-lit channel
 MA_IDLE = 1.0  # ~1 mA per LED even when off
+# The order an LED takes its red, green and blue in. Most strips are GRB;
+# many seed (fairy) lights are RGB.
+ORDERS = ("grb", "rgb", "brg", "bgr", "gbr", "rbg")
 
 
 class Strip:
@@ -9,10 +12,11 @@ class Strip:
     current limit so the strip never asks more of the power supply than it
     can deliver (e.g. during fireworks or the red fill)."""
 
-    def __init__(self, num_leds: int, brightness: float = 0.5, max_milliamps: int = 0):
+    def __init__(self, num_leds: int, brightness: float = 0.5, max_milliamps: int = 0, order: str = "grb"):
         self.num_leds = num_leds
         self.brightness = brightness
         self.max_milliamps = max_milliamps  # 0 = no limit
+        self.order = order
         self._last: tuple[list[RGB], float] | None = None
 
     def show(self, pixels: list[RGB], level: float = 1.0) -> None:
@@ -37,6 +41,11 @@ class Strip:
         so none stay lit past a shorter strip's end."""
         self.write([OFF] * self.num_leds, 0.0)
         self.num_leds = num_leds
+        self._last = None
+
+    def set_order(self, order: str) -> None:
+        """Change the color order (from the device page)."""
+        self.order = order
         self._last = None
 
     def write(self, pixels: list[RGB], factor: float) -> None:

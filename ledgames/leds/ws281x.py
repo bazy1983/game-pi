@@ -9,8 +9,8 @@ class Ws281xStrip(Strip):
     microphone; GPIO13 (PWM1) also works. Note: PWM conflicts with the Pi's analog audio, which is fine
     on a Zero W (it has none)."""
 
-    def __init__(self, num_leds: int, brightness: float, max_milliamps: int, pin: int = 12):
-        super().__init__(num_leds, brightness, max_milliamps)
+    def __init__(self, num_leds: int, brightness: float, max_milliamps: int, pin: int = 12, order: str = "grb"):
+        super().__init__(num_leds, brightness, max_milliamps, order)
         self.pin = pin
         self._open()
 
@@ -18,8 +18,10 @@ class Ws281xStrip(Strip):
         from rpi_ws281x import PixelStrip, ws  # only importable on the Pi
 
         channel = 1 if self.pin in (13, 19, 41, 45, 53) else 0  # the PWM1 pins
+        strip_type = getattr(ws, f"WS2811_STRIP_{self.order.upper()}")
         self.strip = PixelStrip(
-            self.num_leds, self.pin, freq_hz=800_000, dma=10, invert=False, brightness=255, channel=channel
+            self.num_leds, self.pin, freq_hz=800_000, dma=10, invert=False, brightness=255, channel=channel,
+            strip_type=strip_type,
         )
         self.strip.begin()
         self._set = ws.ws2811_led_set
@@ -28,6 +30,11 @@ class Ws281xStrip(Strip):
     def resize(self, num_leds: int) -> None:
         super().resize(num_leds)
         self.strip._cleanup()  # frees the DMA channel for the new strip
+        self._open()
+
+    def set_order(self, order: str) -> None:
+        super().set_order(order)
+        self.strip._cleanup()  # the library sets the order when it opens the strip
         self._open()
 
     def write(self, pixels: list[RGB], factor: float) -> None:

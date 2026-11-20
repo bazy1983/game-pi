@@ -1,12 +1,17 @@
 import unittest
 
 from ledgames.engine import Engine
+from ledgames.layout import Grid, Layout
 from ledgames.leds.base import Strip
+
+OFF = (0, 0, 0)
 
 
 class NullStrip(Strip):
+    last = None
+
     def write(self, pixels, factor):
-        pass
+        self.last = list(pixels)
 
 
 class Clock:
@@ -124,12 +129,12 @@ class StripSettingsTest(unittest.TestCase):
         self.engine = Engine(NullStrip(50), clock=Clock())
 
     def test_led_count_changes_when_idle(self):
-        self.assertIsNone(self.engine.set_led_count(80))
+        self.assertIsNone(self.engine.set_layout(Layout.strip(80)))
         self.assertEqual(self.engine.strip.num_leds, 80)
         self.engine.tick(0.1)
         self.assertEqual(len(self.engine.pixels), 80)
         self.engine.open("fast_tap", "easy", {}, "host")
-        self.assertIsNotNone(self.engine.set_led_count(60))
+        self.assertIsNotNone(self.engine.set_layout(Layout.strip(60)))
         self.assertIsNotNone(self.engine.test_strip())
         self.assertEqual(self.engine.strip.num_leds, 80)
 
@@ -154,6 +159,65 @@ class StripSettingsTest(unittest.TestCase):
         self.engine.stop()
         self.engine.tick(0.1)
         self.assertTrue(all(p == (0, 0, 0) for p in self.engine.pixels))
+
+
+class GridTest(unittest.TestCase):
+    """A 3 × 2 grid: columns from the top left, zigzag, one dark LED at each turn."""
+
+    def setUp(self):
+        self.engine = Engine(NullStrip(50), clock=Clock())
+        self.grid = Grid(width=3, height=2, start="top-left", skip=1)
+        self.assertIsNone(self.engine.set_layout(Layout.of_grid(self.grid)))
+
+    def test_switching_resizes_the_chain(self):
+        self.assertEqual(self.engine.strip.num_leds, 8)  # 6 LEDs and 2 dark ones
+        self.assertEqual(len(self.engine.pixels), 6)
+        self.assertEqual(self.engine.lights.kind, "grid")
+
+    def test_frames_go_out_in_chain_order(self):
+        engine = self.engine
+        engine.show_pattern("check")  # frame, so every pixel is lit; red top left
+        engine.tick(0.1)
+        chain = engine.strip.last
+        self.assertEqual(chain[0], (255, 0, 0))  # the first LED is the top left
+        self.assertEqual([chain[2], chain[5]], [OFF, OFF])  # the dark LEDs at the turns
+
+    def test_first_leds_skip_the_layout(self):
+        engine = self.engine
+        engine.show_pattern("first")
+        engine.tick(0.1)
+        self.assertEqual(engine.strip.last, [(255, 255, 255)] + [(0, 255, 0)] * 4 + [OFF] * 3)
+        engine.show_pattern(None)
+        engine.tick(0.1)
+        self.assertEqual(engine.strip.last, [OFF] * 8)
+
+    def test_patterns_end_by_themselves(self):
+        engine = self.engine
+        engine.show_pattern("red")
+        engine.tick(0.1)
+        self.assertNotEqual(engine.strip.last, [OFF] * 8)
+        for _ in range(121):
+            engine.tick(1.0)
+        self.assertEqual(engine.strip.last, [OFF] * 8)
+
+    def test_check_is_only_for_grids(self):
+        self.engine.set_layout(Layout.strip(20))
+        self.assertIsNotNone(self.engine.show_pattern("check"))
+        self.assertIsNone(self.engine.show_pattern("first"))
+        self.assertIsNotNone(self.engine.show_pattern("blue"))
+
+    def test_strip_games_dont_open_on_a_grid(self):
+        self.assertEqual(self.engine.open("fast_tap", "easy", {}, "host"), "That game is for the LED strip.")
+        self.assertEqual(self.engine.session()["phase"], "idle")
+
+    def test_strip_lights_stay_off_on_a_grid(self):
+        engine = self.engine
+        engine.lights.update({"on": True, "effect": "flow"})
+        self.assertFalse(engine.lights.active)
+        engine.tick(0.1)
+        self.assertEqual(engine.strip.last, [OFF] * 8)
+        engine.set_layout(Layout.strip(20))
+        self.assertTrue(engine.lights.active)  # back on the strip, the effect is still picked
 
 
 class SinglePlayerTest(unittest.TestCase):

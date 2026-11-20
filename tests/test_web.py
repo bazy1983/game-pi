@@ -131,6 +131,85 @@ class WebTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(load_settings(Path(tmp)), {"leds": 80})
             self.assertEqual((await (await self.client.get("/api/device")).json())["leds"], 80)
 
+    async def test_switching_to_a_grid_and_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            await self.start(state_dir=Path(tmp))
+            ws = await self.client.ws_connect("/ws")
+            await ws.send_json({"type": "hello", "clientId": "a"})
+            games = await ws.receive_json()
+            self.assertEqual(games["layout"], {"kind": "strip", "leds": 50})
+            self.assertTrue(games["games"])
+            await ws.receive_json()  # session
+
+            grid = {"width": 8, "height": 4, "runs": "columns", "zigzag": True, "start": "top-left", "skip": 0}
+            r = await self.client.post("/api/device/layout", json={"layout": "grid", "grid": grid})
+            self.assertEqual(r.status, 200)
+            self.assertEqual(self.engine.strip.num_leds, 32)
+            games = await ws.receive_json()  # the phones hear about it
+            self.assertEqual(games["layout"], {"kind": "grid", "width": 8, "height": 4})
+            self.assertEqual(games["games"], [])  # no grid games yet
+            self.assertEqual(self.engine._pattern[0], "check")  # shows the check pattern
+            body = await (await self.client.get("/api/device")).json()
+            self.assertEqual((body["layout"], body["grid"], body["leds"]), ("grid", grid, 50))
+            self.assertEqual((await (await self.client.get("/api/lights")).json())["effects"], [])
+            r = await self.client.post("/api/device/leds", json={"count": 80})
+            self.assertEqual(r.status, 409)  # that's the strip's
+
+            r = await self.client.post("/api/device/layout", json={"layout": "strip"})
+            self.assertEqual(r.status, 200)
+            self.assertEqual(self.engine.strip.num_leds, 50)
+            self.assertEqual((await ws.receive_json())["layout"]["kind"], "strip")
+            saved = load_settings(Path(tmp))
+            self.assertEqual((saved["layout"], saved["grid"]), ("strip", grid))  # the grid is kept
+            await ws.close()
+
+    async def test_bad_layouts(self):
+        await self.start()
+        for body in ({}, {"layout": "ring"}, {"layout": "grid", "grid": {"width": 99}}):
+            r = await self.client.post("/api/device/layout", json=body)
+            self.assertEqual(r.status, 400, body)
+        self.engine.open("fast_tap", "easy", {}, "host")
+        r = await self.client.post("/api/device/layout", json={"layout": "grid", "grid": {}})
+        self.assertEqual(r.status, 409)
+        self.assertEqual(self.engine.layout.kind, "strip")
+
+    async def test_color_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            await self.start(state_dir=Path(tmp))
+            self.assertEqual((await (await self.client.get("/api/device")).json())["color_order"], "grb")
+            r = await self.client.post("/api/device/color-order", json={"order": "xyz"})
+            self.assertEqual(r.status, 400)
+            r = await self.client.post("/api/device/color-order", json={"order": "rgb"})
+            self.assertEqual(r.status, 200)
+            self.assertEqual(self.engine.strip.order, "rgb")
+            self.assertEqual(load_settings(Path(tmp))["color_order"], "rgb")
+
+    async def test_patterns(self):
+        await self.start()
+        r = await self.client.post("/api/device/pattern", json={"pattern": "first"})
+        self.assertEqual(r.status, 200)
+        self.assertEqual(self.engine._pattern[0], "first")
+        r = await self.client.post("/api/device/pattern", json={"pattern": "check"})
+        self.assertEqual(r.status, 409)  # only on a grid
+        r = await self.client.post("/api/device/pattern", json={"pattern": None})
+        self.assertEqual(r.status, 200)
+        self.assertIsNone(self.engine._pattern)
+
+    async def test_simulator_pages(self):
+        await self.start()
+        for path, title in (("/sim", "LED Strip Simulator"), ("/grid", "LED Grid Simulator")):
+            r = await self.client.get(path)
+            self.assertEqual(r.status, 200, path)
+            self.assertIn(f"<title>{title}</title>", await r.text())
+
+    async def test_sim_gets_the_layout(self):
+        await self.start()
+        ws = await self.client.ws_connect("/ws/sim")
+        head = await ws.receive_json()
+        self.assertEqual((head["numLeds"], head["layout"]["kind"]), (50, "strip"))
+        self.assertEqual(len(await ws.receive_bytes()), 150)
+        await ws.close()
+
     async def test_no_strip_changes_during_a_game(self):
         await self.start()
         self.engine.open("fast_tap", "easy", {}, "host")

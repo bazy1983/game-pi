@@ -41,7 +41,9 @@
   <section id="view-lights" class="view hidden">
     <button class="back" data-nav="games">‹ Games</button>
     <h1>Lights</h1>
-    <p class="muted">Plays on the strip whenever nobody is playing. A game takes over, then the lights come back.</p>
+    <p class="muted">Plays on the lights whenever nobody is playing. A game takes over, then the lights come back.</p>
+    <p id="lights-none" class="muted hidden">There are no light effects for the LED grid yet. They're on the way in an update.</p>
+    <div id="lights-body">
     <button id="lights-power" class="primary"></button>
     <h2>Effect</h2>
     <div id="lights-effects" class="grid"></div>
@@ -75,6 +77,7 @@
     <input id="lights-speed" class="slider" type="range" min="0" max="1" step="0.01" aria-label="Speed">
     <h2>Brightness</h2>
     <input id="lights-level" class="slider" type="range" min="0.05" max="1" step="0.01" aria-label="Brightness">
+    </div>
   </section>
 
   <!-- Device: network, version, updates -->
@@ -87,13 +90,50 @@
       <div id="signal-row" class="row hidden"><span>Signal</span><span id="device-signal" class="signal"></span></div>
       <div class="row"><span>Address</span><span id="device-address"></span></div>
     </div>
-    <h2>LED strip</h2>
-    <p class="muted">How many LEDs the strip has. Test plays a dot climbing to the top, red, green and blue, then blinks the first and last LED: the last one should be the top of the strip.</p>
-    <div class="leds-row">
-      <input id="leds-input" type="number" inputmode="numeric" min="1" step="1" aria-label="Number of LEDs">
-      <button id="leds-save" class="secondary">Save</button>
+    <h2>Connected lights</h2>
+    <p class="muted">What's plugged in. Each has its own games and light effects.</p>
+    <div id="layout-pick" class="segmented">
+      <button class="card" data-layout="strip"><div class="title">LED strip</div><div class="desc">One line of LEDs</div></button>
+      <button class="card" data-layout="grid"><div class="title">LED grid</div><div class="desc">Strips side by side</div></button>
     </div>
-    <button id="leds-test" class="secondary">Test LEDs</button>
+    <div id="strip-settings">
+      <p class="muted">How many LEDs the strip has. Test plays a dot climbing to the top, red, green and blue, then blinks the first and last LED: the last one should be the top of the strip.</p>
+      <div class="leds-row">
+        <input id="leds-input" type="number" inputmode="numeric" min="1" step="1" aria-label="Number of LEDs">
+        <button id="leds-save" class="secondary">Save</button>
+      </div>
+      <button id="leds-test" class="secondary">Test LEDs</button>
+    </div>
+    <div id="grid-settings" class="hidden">
+      <p class="muted">The grid's size in LEDs, and how its strips are wired. Not sure? Check wiring works it out with you.</p>
+      <div class="fields">
+        <label class="field"><span>Width</span><input id="grid-width" type="number" inputmode="numeric" min="2" step="1"></label>
+        <label class="field"><span>Height</span><input id="grid-height" type="number" inputmode="numeric" min="2" step="1"></label>
+        <label class="field wide"><span>Strips run</span>
+          <select id="grid-runs"><option value="columns">Up and down (columns)</option><option value="rows">Across (rows)</option></select>
+        </label>
+        <label class="field wide"><span>Pattern</span>
+          <select id="grid-zigzag"><option value="true">Zigzag: every other strip runs back</option><option value="false">Every strip runs the same way</option></select>
+        </label>
+        <label class="field wide"><span>First LED</span>
+          <select id="grid-start">
+            <option value="top-left">Top left</option><option value="top-right">Top right</option>
+            <option value="bottom-left">Bottom left</option><option value="bottom-right">Bottom right</option>
+          </select>
+        </label>
+        <label class="field wide"><span>Dark LEDs between strips</span><input id="grid-skip" type="number" inputmode="numeric" min="0" step="1"></label>
+      </div>
+      <p id="grid-total" class="muted"></p>
+      <button id="grid-save" class="secondary">Save</button>
+      <button id="wiring-btn" class="secondary">Check wiring</button>
+    </div>
+    <label class="field wide color-order"><span>Color order</span>
+      <select id="color-order">
+        <option value="grb">GRB (most LED strips)</option><option value="rgb">RGB (many seed lights)</option>
+        <option value="brg">BRG</option><option value="bgr">BGR</option><option value="gbr">GBR</option><option value="rbg">RBG</option>
+      </select>
+    </label>
+    <p class="muted">If the colors come out wrong (red shows green, say), change this. Check wiring finds it for you.</p>
     <div id="mic-section" class="hidden">
       <h2>Microphone</h2>
       <p id="mic-text" class="muted"></p>
@@ -108,6 +148,16 @@
     <h2>Wi-Fi</h2>
     <p class="muted">Moving the game to another network? It will start its setup network so you can pick a new one.</p>
     <button id="wifi-setup-btn" class="secondary">Change Wi-Fi network</button>
+  </section>
+
+  <!-- Check wiring: a guided check of a grid's colors and wiring -->
+  <section id="view-wiring" class="view hidden">
+    <button id="wiring-back" class="back">‹ Device</button>
+    <h1>Check wiring</h1>
+    <div id="wiring-step" class="label"></div>
+    <p id="wiring-question" class="wiring-question"></p>
+    <p id="wiring-hint" class="muted"></p>
+    <div id="wiring-answers" class="list"></div>
   </section>
 
   <!-- Difficulty + settings -->

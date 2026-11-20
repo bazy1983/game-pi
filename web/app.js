@@ -65,6 +65,7 @@ const SPECTATE_LINES = {
 
 let ws = null;
 let games = [];
+let layout = { kind: "strip" }; // the connected lights: {kind: "strip", leds} or {kind: "grid", width, height}
 let session = { phase: "idle" };
 let view = "games";        // local navigation when not in a game
 let selectedGame = null;
@@ -121,7 +122,9 @@ function connect() {
       onPong(msg);
     } else if (msg.type === "games") {
       games = msg.games;
+      layout = msg.layout;
       renderGameList();
+      if (view === "lights") loadLights(); // other effects for these lights
     } else if (msg.type === "session") {
       onSession(msg);
     } else if (msg.type === "error") {
@@ -183,6 +186,12 @@ function onSession(s) {
 function renderGameList() {
   const list = $("game-list");
   list.innerHTML = "";
+  if (!games.length && layout.kind === "grid") {
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = "Games for the LED grid are on the way in an update. Meanwhile, set the grid up on the device page (the cog).";
+    list.appendChild(p);
+  }
   for (const g of games) {
     const players = g.max_players > 1 ? ` · 1–${g.max_players} players` : "";
     list.appendChild(card(g.name, g.description + players, false, () => openSetup(g)));
@@ -1490,7 +1499,7 @@ const UPDATE_TEXT = {
   checking: () => "Checking for updates…",
   up_to_date: () => "You have the latest version.",
   available: (u) => `Version ${u.latest} is available.` + (u.auto ? " It installs by itself when nobody is playing." : ""),
-  installing: (u) => `Installing ${u.latest}… the strip shows purple dots.`,
+  installing: (u) => `Installing ${u.latest}… the lights show purple dots.`,
   restarting: () => "Restarting with the new version…",
   error: (u) => u.error || "Something went wrong.",
 };
@@ -1499,6 +1508,7 @@ async function postJSON(url, body = {}) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const res = await r.json().catch(() => ({}));
   if (res.error) toast(res.error);
+  else if (!r.ok) toast(`That didn't work (error ${r.status}). Restart the server if it's running old code.`);
   return res;
 }
 
@@ -1522,6 +1532,7 @@ function signalBars(lit) {
 }
 
 function renderDevice(d) {
+  device = d;
   $("device-name").textContent = d.name;
   $("device-version").textContent = d.version;
   $("device-wifi").textContent = d.wifi ? (d.wifi.ssid || (d.wifi.mode === "online" ? "Ethernet" : d.wifi.mode)) : "—";
@@ -1547,7 +1558,18 @@ function renderDevice(d) {
   leds.max = d.max_leds;
   // Polling mustn't overwrite a number being typed.
   if (document.activeElement !== leds && !leds.dataset.edited) leds.value = d.leds;
-  for (const id of ["leds-save", "leds-test"]) $(id).disabled = d.busy;
+  for (const id of ["leds-save", "leds-test", "grid-save", "wiring-btn"]) $(id).disabled = d.busy;
+  for (const b of document.querySelectorAll("#layout-pick .card")) {
+    b.classList.toggle("selected", b.dataset.layout === d.layout);
+    b.disabled = d.busy;
+  }
+  $("strip-settings").classList.toggle("hidden", d.layout !== "strip");
+  $("grid-settings").classList.toggle("hidden", d.layout !== "grid");
+  $("grid-width").max = $("grid-height").max = d.max_side;
+  $("grid-skip").max = d.max_skip;
+  if (!gridEdited) showGrid(d.grid);
+  gridTotal();
+  if (document.activeElement !== $("color-order")) $("color-order").value = d.color_order;
   $("mic-section").classList.toggle("hidden", !d.mic);
   if (d.mic) {
     $("mic-text").textContent = d.mic.available
@@ -1599,6 +1621,9 @@ async function sendLights() {
 
 function renderLights() {
   if (!lights) return;
+  const none = !lights.effects.length; // none made for these lights yet
+  $("lights-none").classList.toggle("hidden", !none);
+  $("lights-body").classList.toggle("hidden", none);
   const power = $("lights-power");
   power.textContent = lights.on ? "Turn off" : "Turn on";
   power.className = lights.on ? "secondary" : "primary";
@@ -1824,6 +1849,212 @@ $("leds-save").onclick = async () => {
   pollDevice();
 };
 $("leds-test").onclick = () => postJSON("/api/device/test-leds");
+
+// --- connected lights: strip or grid -------------------------------------------------
+
+let device = null;       // the last /api/device reply
+let gridEdited = false;  // polling mustn't overwrite grid settings being changed
+const GRID_FIELDS = ["grid-width", "grid-height", "grid-runs", "grid-zigzag", "grid-start", "grid-skip"];
+
+function showGrid(g) {
+  $("grid-width").value = g.width;
+  $("grid-height").value = g.height;
+  $("grid-runs").value = g.runs;
+  $("grid-zigzag").value = String(g.zigzag);
+  $("grid-start").value = g.start;
+  $("grid-skip").value = g.skip;
+}
+
+function readGrid() {
+  return {
+    width: Number($("grid-width").value),
+    height: Number($("grid-height").value),
+    runs: $("grid-runs").value,
+    zigzag: $("grid-zigzag").value === "true",
+    start: $("grid-start").value,
+    skip: Number($("grid-skip").value),
+  };
+}
+
+function gridTotal() {
+  const g = readGrid();
+  const lines = g.runs === "columns" ? g.width : g.height;
+  const dark = g.skip * Math.max(0, lines - 1);
+  const total = g.width * g.height + dark;
+  let text = `${g.width} × ${g.height}: ${total} LEDs`;
+  if (dark) text += `, ${dark} of them dark at the turns`;
+  if (device && total > device.max_leds) text += `. The most is ${device.max_leds}.`;
+  $("grid-total").textContent = text;
+}
+
+for (const id of GRID_FIELDS) {
+  $(id).addEventListener("input", () => { gridEdited = true; gridTotal(); });
+}
+
+async function setLayout(kind, grid) {
+  const res = await postJSON("/api/device/layout", kind === "grid" ? { layout: kind, grid } : { layout: kind });
+  if (res.error === null) gridEdited = false;
+  pollDevice();
+  return res.error === null;
+}
+
+for (const b of document.querySelectorAll("#layout-pick .card")) {
+  b.onclick = async () => {
+    const kind = b.dataset.layout;
+    if (!device || device.layout === kind) return;
+    if (await setLayout(kind, readGrid())) {
+      toast(kind === "grid" ? "Switched to the LED grid. New grid? Check wiring." : "Switched to the LED strip.");
+    }
+  };
+}
+
+$("grid-save").onclick = async () => {
+  if (await setLayout("grid", readGrid())) toast("Saved. The grid shows a frame, an arrow up and red in the top left.");
+};
+
+$("color-order").onchange = async (e) => {
+  const res = await postJSON("/api/device/color-order", { order: e.target.value });
+  if (res.error === null) {
+    toast(`Color order: ${e.target.value.toUpperCase()}. Watch the test.`);
+    postJSON("/api/device/test-leds");
+  }
+  pollDevice();
+};
+
+// --- check wiring ----------------------------------------------------------------------
+// Walks through a grid's wiring with patterns on the lights (see
+// effects/wiring.py): what color shows twice gives the color order, the
+// first LEDs where the grid starts and which way its strips run, then a
+// check pattern confirms it.
+
+let wiring = null; // {step, red: the color seen for red}
+
+const COLOR_ANSWERS = [["r", "Red", "#ff3b3b"], ["g", "Green", "#22dd44"], ["b", "Blue", "#3b8cff"]];
+const CORNERS = [["top-left", "Top left"], ["top-right", "Top right"], ["bottom-left", "Bottom left"], ["bottom-right", "Bottom right"]];
+const WIRING_STEPS = { red: 1, green: 1, dark: 1, first: 2, corner: 2, direction: 3, check: 4, fix: 4 };
+
+$("wiring-btn").onclick = async () => {
+  if (gridEdited && !(await setLayout("grid", readGrid()))) return; // check what's on the page
+  wiring = { step: "red" };
+  view = "wiring";
+  show("wiring");
+  renderWiring();
+};
+
+$("wiring-back").onclick = () => {
+  wiring = null;
+  postJSON("/api/device/pattern", { pattern: null });
+  view = "device";
+  show("device");
+  pollDevice();
+};
+
+function wiringTo(step, pattern) {
+  wiring.step = step;
+  if (pattern) postJSON("/api/device/pattern", { pattern });
+  renderWiring();
+}
+
+function answerButton(label, onClick, color) {
+  const b = card(label, "", false, onClick);
+  if (color) {
+    b.classList.add("swatch-answer");
+    const dot = document.createElement("i");
+    dot.style.background = color;
+    b.prepend(dot);
+  }
+  return b;
+}
+
+// The color order the LEDs really have: with `order` set, red showed as
+// `red` and green as `green`. Each color goes out at its place in `order`,
+// and the LEDs light whatever color they take at that place.
+function trueOrder(order, red, green) {
+  const blue = "rgb".replace(red, "").replace(green, "");
+  const real = [];
+  real[order.indexOf("r")] = red;
+  real[order.indexOf("g")] = green;
+  real[order.indexOf("b")] = blue;
+  return real.join("");
+}
+
+function renderWiring() {
+  const w = wiring;
+  const ask = (q, hint) => {
+    $("wiring-question").textContent = q;
+    $("wiring-hint").textContent = hint || "";
+  };
+  const answers = $("wiring-answers");
+  answers.innerHTML = "";
+  const add = (el) => answers.appendChild(el);
+  const again = () => add(answerButton("Run the check again", () => wiringTo("red", "red")));
+  $("wiring-step").textContent = w.step === "done" ? "" : `Step ${WIRING_STEPS[w.step]} of 4`;
+
+  if (w.step === "red") {
+    ask("What color is the grid?", "Every LED should be lit, all in one color.");
+    for (const [c, name, hex] of COLOR_ANSWERS) add(answerButton(name, () => { w.red = c; wiringTo("green", "green"); }, hex));
+    add(answerButton("Nothing, or only some LEDs", () => wiringTo("dark")));
+  } else if (w.step === "dark") {
+    ask("Not all lit?");
+    answers.innerHTML = `<ul class="tips">
+      <li>Nothing lit: check that the LED power supply is on, that its ground is joined to the Pi's, and that the Pi's data wire goes to the input end of the first strip.</li>
+      <li>Lit up to a point: check the joint just after the last LED that lights, all three wires.</li>
+      <li>Lit too far, or not far enough: check the width and height on the device page.</li></ul>`;
+    again();
+  } else if (w.step === "green") {
+    ask("And now?");
+    for (const [c, name, hex] of COLOR_ANSWERS) {
+      if (c === w.red) continue;
+      add(answerButton(name, async () => {
+        const order = trueOrder(device.color_order, w.red, c);
+        if (order !== device.color_order) {
+          const res = await postJSON("/api/device/color-order", { order });
+          if (res.error !== null) return;
+          device.color_order = order;
+          toast(`Color order set to ${order.toUpperCase()}`);
+        }
+        wiringTo("first", "first");
+      }, hex));
+    }
+  } else if (w.step === "first") {
+    ask("Which corner is the white light in?", "One white LED, with a few green ones next to it.");
+    const grid = document.createElement("div");
+    grid.className = "corners";
+    for (const [corner, name] of CORNERS) {
+      grid.appendChild(card(name, "", false, () => { w.start = corner; wiringTo("direction"); }));
+    }
+    add(grid);
+    add(answerButton("It's not in a corner", () => wiringTo("corner")));
+  } else if (w.step === "corner") {
+    ask("The grid has to start in a corner");
+    answers.innerHTML = `<ul class="tips">
+      <li>Connect the Pi's data wire to the input end of a strip at a corner of the grid, then the next strip to that one's output end, and so on.</li></ul>`;
+    again();
+  } else if (w.step === "direction") {
+    const top = w.start.startsWith("top"), left = w.start.endsWith("left");
+    ask("Which way do the green lights go from it?");
+    const pick = (runs) => async () => {
+      // Saving shows the check pattern.
+      if (await setLayout("grid", { ...readGrid(), start: w.start, runs })) wiringTo("check");
+    };
+    add(answerButton(`${top ? "Down" : "Up"}, along the ${left ? "left" : "right"} edge`, pick("columns")));
+    add(answerButton(`Across, along the ${top ? "top" : "bottom"} edge`, pick("rows")));
+  } else if (w.step === "check") {
+    ask("Do you see a frame around the edge, an arrow pointing up, and a red dot in the top left corner?");
+    add(answerButton("Yes, all of it", () => wiringTo("done", null)));
+    add(answerButton("Not quite", () => wiringTo("fix")));
+  } else if (w.step === "fix") {
+    ask("Let's fix it");
+    answers.innerHTML = `<ul class="tips">
+      <li>Gaps, or broken and jagged lines: check the width and height, the pattern (zigzag or not) and the dark LEDs between strips on the device page, then save.</li>
+      <li>The arrow points another way, or the red dot is in another corner: run the check again.</li>
+      <li>Some LEDs stay dark: check the joint just after the last LED that lights.</li></ul>`;
+    again();
+  } else if (w.step === "done") {
+    ask("All set 🎉", "The grid's colors and wiring match its settings.");
+    add(answerButton("Done", () => $("wiring-back").click()));
+  }
+}
 
 // The slider sends at most ~8 changes a second.
 let micTimer = null;

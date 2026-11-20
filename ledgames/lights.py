@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass
 
 from .colors import RGB
-from .effects.ambient import EFFECTS, Effect
+from .effects.ambient import EFFECTS, Effect, effects_for
 
 FADE_IN = 1.0  # s, when the lights come back after a game
 
@@ -141,8 +141,10 @@ def _number(value) -> bool:
 
 
 class Lights:
-    def __init__(self, rng: random.Random | None = None):
+    def __init__(self, rng: random.Random | None = None, kind: str = "strip"):
         self.rng = rng or random.Random()
+        self.kind = kind  # the connected lights: "strip" or "grid"
+        self.effects = effects_for(kind)
         self.on = DEFAULTS["on"]
         self.effect = DEFAULTS["effect"]
         self.palette = DEFAULTS["palette"]
@@ -157,9 +159,21 @@ class Lights:
         self.mic = None  # an audio.Microphone, if the unit has one
 
     @property
+    def active(self) -> bool:
+        """On, with an effect made for the connected lights. (The effect
+        setting is kept when they change, for when the others come back.)"""
+        return self.on and self.effect in self.effects
+
+    @property
     def listening(self) -> bool:
         """A sound effect is on, so the microphone should listen."""
-        return self.on and EFFECTS[self.effect].sound
+        return self.active and EFFECTS[self.effect].sound
+
+    def set_kind(self, kind: str) -> None:
+        self.kind = kind
+        self.effects = effects_for(kind)
+        self._fx = None
+        self._fade = 0.0
 
     def settings(self) -> dict:
         return {k: getattr(self, k) for k in DEFAULTS}

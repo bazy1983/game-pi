@@ -1,13 +1,15 @@
-from .base import Strip
+from .base import ORDERS, Strip
 
 MAX_LEDS = 1000  # past this, one frame takes longer to send than the game has
 
 
-def make_strip(backend: str, num_leds: int, brightness: float, max_milliamps: int, pin: int) -> Strip:
+def make_strip(
+    backend: str, num_leds: int, brightness: float, max_milliamps: int, pin: int, order: str = "grb"
+) -> Strip:
     if backend == "ws281x":
         from .ws281x import Ws281xStrip
 
-        return Ws281xStrip(num_leds, brightness, max_milliamps, pin)
+        return Ws281xStrip(num_leds, brightness, max_milliamps, pin, order)
     from .sim import SimStrip
 
-    return SimStrip(num_leds)
+    return SimStrip(num_leds, order)

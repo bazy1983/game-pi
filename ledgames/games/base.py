@@ -37,6 +37,7 @@ class GameInfo:
     # to this many phones join; each gets the next color in player_colors.
     max_players: int = 1
     player_colors: list[GameColor] = field(default_factory=list)
+    layout: str = "strip"  # the lights it's played on: "strip" or "grid" (see layout.py)
 
 
 class Game:

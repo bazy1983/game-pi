@@ -8,7 +8,8 @@ from . import __version__
 from .audio import Microphone
 from .device import default_state_dir, load_or_create, load_settings
 from .engine import Engine
-from .leds import MAX_LEDS, make_strip
+from .layout import Layout, from_settings
+from .leds import MAX_LEDS, ORDERS, make_strip
 from .server import build_app
 from .updater import RELEASE_DIR, RELEASES_URL, Updater, install_root, load_public_key
 from .wifi import Wifi
@@ -20,10 +21,14 @@ def main() -> None:
     p.add_argument(
         "--leds",
         type=int,
-        help="number of LEDs on the strip (default: the count set on the device page, else LED_COUNT or 250)",
+        help="drive a strip of this many LEDs (default: the lights set on the device page, else a strip of "
+        "LED_COUNT or 250)",
     )
     p.add_argument("--backend", choices=["sim", "ws281x"], default=env("LED_BACKEND", "sim"))
     p.add_argument("--pin", type=int, default=int(env("LED_PIN", 12)), help="GPIO pin (ws281x)")
+    p.add_argument(
+        "--order", choices=ORDERS, help="the LEDs' color order (default: as set on the device page, else LED_ORDER or grb)"
+    )
     p.add_argument("--brightness", type=float, default=float(env("LED_BRIGHTNESS", 0.5)), help="0..1")
     p.add_argument(
         "--max-ma", type=int, default=int(env("LED_MAX_MA", 0)), help="power supply current budget in mA (0 = off)"
@@ -57,9 +62,14 @@ def main() -> None:
     if args.leds is None:
         saved = saved_settings.get("leds")
         valid = isinstance(saved, int) and not isinstance(saved, bool) and 1 <= saved <= MAX_LEDS
-        args.leds = saved if valid else int(env("LED_COUNT", 250))
-    strip = make_strip(args.backend, args.leds, args.brightness, args.max_ma, args.pin)
-    engine = Engine(strip, fps=args.fps)
+        layout = from_settings(saved_settings, saved if valid else int(env("LED_COUNT", 250)), MAX_LEDS)
+    else:
+        layout = Layout.strip(args.leds)
+    if args.order is None:
+        saved = saved_settings.get("color_order")
+        args.order = saved if saved in ORDERS else env("LED_ORDER", "grb")
+    strip = make_strip(args.backend, layout.num_leds, args.brightness, args.max_ma, args.pin, args.order)
+    engine = Engine(strip, fps=args.fps, layout=layout)
     engine.lights.load(saved_settings.get("lights", {}))
     if args.mic != "off":
         engine.lights.mic = Microphone(args.mic)
@@ -89,11 +99,12 @@ def main() -> None:
             release=RELEASE_DIR.name,
         )
 
-    print(f"LED Games {__version__}: {args.leds} LEDs, backend={args.backend}, wifi={args.wifi}")
+    lights = f"{layout.width}×{layout.height} grid" if layout.grid else "strip"
+    print(f"LED Games {__version__}: {lights}, {layout.num_leds} LEDs, backend={args.backend}, wifi={args.wifi}")
     if device:
         print(f"Unit {device.hostname}, setup hotspot {device.hotspot_ssid!r}")
     if args.backend == "sim":
-        print(f"Simulator: http://localhost:{args.port}/sim")
+        print(f"Simulator: http://localhost:{args.port}/sim (strip), http://localhost:{args.port}/grid (grid)")
     web.run_app(build_app(engine, device, wifi, updater, state_dir), host=args.host, port=args.port, print=None)
 
 

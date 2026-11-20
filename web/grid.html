@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>LED Grid Simulator</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #050608; color: #8a93a6; font: 13px system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 12px; box-sizing: border-box; }
+    canvas { background: #0d0f14; border-radius: 6px; }
+    #info { white-space: nowrap; }
+    #info a { color: #eef1f6; }
+  </style>
+</head>
+<body>
+  <canvas id="grid"></canvas>
+  <div id="info">connecting…</div>
+  <script>
+    // Draws the grid as the wall sees it: each LED a round dot, like a seed
+    // light, at its place on the grid. The server streams the LEDs in the
+    // order they're wired, with where each one is (-1: dark, at a turn).
+    const canvas = document.getElementById("grid");
+    const ctx = canvas.getContext("2d");
+    const info = document.getElementById("info");
+    let grid = null;     // {width, height}, while the unit drives a grid
+    let positions = [];  // each LED's pixel, by row from the top left
+    let last = null;     // the last frame, to redraw after a resize
+
+    function draw(frame) {
+      last = frame;
+      const dpr = devicePixelRatio;
+      const { width: gw, height: gh } = grid;
+      const cell = Math.max(4, Math.floor(Math.min((innerWidth - 24) / gw, (innerHeight - 60) / gh)));
+      const w = gw * cell * dpr, h = gh * cell * dpr;
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+        canvas.style.width = `${gw * cell}px`;
+        canvas.style.height = `${gh * cell}px`;
+      }
+      ctx.clearRect(0, 0, w, h);
+      const pitch = cell * dpr, r = pitch * 0.3;
+      for (let i = 0; i < positions.length; i++) {
+        const at = positions[i];
+        if (at < 0) continue;
+        const [cr, cg, cb] = [frame[i * 3], frame[i * 3 + 1], frame[i * 3 + 2]];
+        const lit = cr + cg + cb > 0;
+        ctx.fillStyle = lit ? `rgb(${cr},${cg},${cb})` : "#161921";
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.shadowBlur = lit ? pitch * 0.6 : 0;
+        ctx.beginPath();
+        ctx.arc(((at % gw) + 0.5) * pitch, (Math.floor(at / gw) + 0.5) * pitch, r, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    }
+    addEventListener("resize", () => { if (grid && last) draw(last); });
+
+    function connect() {
+      const ws = new WebSocket(`ws://${location.host}/ws/sim`);
+      ws.binaryType = "arraybuffer";
+      ws.onmessage = (e) => {
+        if (typeof e.data === "string") {
+          const msg = JSON.parse(e.data);
+          if (msg.layout.kind === "grid") {
+            grid = msg.layout;
+            positions = msg.positions;
+            info.textContent = `${grid.width} × ${grid.height} grid, ${msg.numLeds} LEDs`;
+          } else {
+            grid = null;
+            canvas.width = canvas.height = 0;
+            info.innerHTML = 'The unit drives the LED strip. Pick LED grid in Device settings on the <a href="/" target="_blank">phone page</a>, or <a href="/sim">open the strip</a>.';
+          }
+        } else if (grid) {
+          draw(new Uint8Array(e.data));
+        }
+      };
+      ws.onclose = () => { info.textContent = "disconnected"; setTimeout(connect, 1000); };
+    }
+    connect();
+  </script>
+</body>
+</html>

@@ -29,6 +29,7 @@ def _mix(a: RGB, b: RGB, f: float) -> RGB:
 class Effect:
     name = ""
     sound = False  # reacts to the microphone: the lights set `level` before each frame
+    layout = "strip"  # the lights it's made for: "strip" or "grid" (see layout.py)
 
     def __init__(self, num_leds: int, rng: random.Random):
         self.n = num_leds
@@ -511,3 +512,8 @@ EFFECTS: dict[str, type[Effect]] = {
     "still": Still,
     "level": Level,
 }
+
+
+def effects_for(kind: str) -> dict[str, type[Effect]]:
+    """The effects made for the connected lights, "strip" or "grid"."""
+    return {k: cls for k, cls in EFFECTS.items() if cls.layout == kind}

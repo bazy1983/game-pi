@@ -10,13 +10,15 @@ Protocol (JSON over /ws):
     {"type": "input", "action": {...}}
     {"type": "stop"}                               host quits
   server → client
-    {"type": "games", "games": [...]}              once, after hello
+    {"type": "games", "games": [...], "layout": {...}}  after hello, and when the lights change
     {"type": "session", "role", "you", "host", ...}  whenever the session changes
     {"type": "pong", "t0": ..., "server": <s>}     server clock (time.monotonic)
     {"type": "error", "message": "..."}
 
-/ws/sim streams raw RGB frames (3 bytes per LED, bottom first) for the
-simulator page.
+The simulator pages: /sim draws the strip, /grid the grid.
+/ws/sim streams raw RGB frames (3 bytes per LED, in chain order) for the
+simulator page, after {"numLeds", "layout", "positions"} (where each LED is
+on the canvas, see layout.py), and again whenever the lights change.
 
 HTTP (JSON):
   GET  /api/setup              Wi-Fi setup page state (nearby networks, errors)
@@ -24,8 +26,13 @@ HTTP (JSON):
   GET  /api/device             name, version, network, update status
   POST /api/device/update      {"action": "check" | "install"}
   POST /api/device/wifi-setup  start the setup hotspot to change networks
-  POST /api/device/leds        {"count": n}: set (and save) the number of LEDs
+  POST /api/device/layout      {"layout": "strip"} or {"layout": "grid", "grid": {...}}:
+                               the connected lights (saved), see layout.py
+  POST /api/device/leds        {"count": n}: set (and save) the number of LEDs on the strip
+  POST /api/device/color-order {"order": "grb" | "rgb" | ...}: (saved)
   POST /api/device/test-leds   play the wiring check pattern on the strip
+  POST /api/device/pattern     {"pattern": "red" | "green" | "first" | "check" | null}:
+                               the guided wiring check's patterns (effects/wiring.py)
   POST /api/device/mic         microphone sensitivity, 0–1: {sensitivity}
   GET  /api/lights             ambient lights settings, effects and palettes
   POST /api/lights             change some of those settings (see lights.py)
@@ -48,10 +55,10 @@ from aiohttp import WSMsgType, web
 from . import __version__, qr, trace
 from .colors import RGB
 from .device import PRODUCT, Device, load_settings, save_settings
-from .effects.ambient import EFFECTS
 from .engine import Engine
 from .games import GAMES
-from .leds import MAX_LEDS
+from .layout import MAX_SIDE, MAX_SKIP, Grid, Layout
+from .leds import MAX_LEDS, ORDERS
 from .leds.sim import SimStrip
 from .lights import PALETTES, palette_gradient
 from .updater import Updater
@@ -62,6 +69,7 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 # player who disconnects is dropped only if they don't reconnect in time.
 # Long enough to survive a page reload.
 DROP_AFTER = 10
+DEFAULT_LEDS = 250  # the strip's, if it was never set
 GREEN: RGB = (0, 255, 0)
 RED: RGB = (255, 0, 0)
 
@@ -80,6 +88,16 @@ class Server:
         self.wifi = wifi
         self.updater = updater
         self.state_dir = state_dir  # where device page settings are saved (None: not saved)
+        # Kept while the other kind of lights is connected, for when it's back.
+        saved = load_settings(state_dir) if state_dir else {}
+        layout = engine.layout
+        if layout.grid:
+            count = saved.get("leds")
+            valid = isinstance(count, int) and not isinstance(count, bool) and 1 <= count <= MAX_LEDS
+            self.strip_leds = count if valid else DEFAULT_LEDS
+        else:
+            self.strip_leds = layout.size
+        self.grid = layout.grid or Grid.parse(saved.get("grid"), MAX_LEDS)[0] or Grid()
         self.wireless_stats = Path("/proc/net/wireless")  # the Wi-Fi signal (tests point it elsewhere)
         self._save_lights: asyncio.TimerHandle | None = None
         self._save_mic: asyncio.TimerHandle | None = None
@@ -105,6 +123,12 @@ class Server:
         else:
             role = "spectator"
         return {"type": "session", "role": role, "you": you, "host": client_id == self.engine.host, **session}
+
+    def games_message(self) -> dict:
+        """The games for the connected lights."""
+        layout = self.engine.layout
+        games = [asdict(cls.info) for cls in GAMES.values() if cls.info.layout == layout.kind]
+        return {"type": "games", "games": games, "layout": layout.describe()}
 
     def broadcast(self) -> None:
         start = time.monotonic()
@@ -136,8 +160,7 @@ class Server:
             task = self.away.pop(client_id, None)
             if task:
                 task.cancel()  # reconnected in time
-            games = [asdict(cls.info) for cls in GAMES.values()]
-            await ws.send_json({"type": "games", "games": games})
+            await ws.send_json(self.games_message())
             await ws.send_json(self.session_for(client_id))
             return
 
@@ -230,17 +253,28 @@ class Server:
         ws = web.WebSocketResponse(heartbeat=10)
         await ws.prepare(request)
         request.app["sockets"].add(ws)
-        strip = self.engine.strip
-        num_leds = None
+        engine = self.engine
+
+        async def stream():
+            layout = None
+            try:
+                while not ws.closed:
+                    if engine.layout is not layout:  # also after a change on the device page
+                        layout = engine.layout
+                        await ws.send_json(
+                            {"numLeds": layout.num_leds, "layout": layout.describe(), "positions": layout.positions()}
+                        )
+                    await ws.send_bytes(engine.strip.frame)
+                    await asyncio.sleep(1 / engine.fps)
+            except ConnectionError:
+                pass  # viewer closed the page
+
+        sender = asyncio.create_task(stream())
         try:
-            while not ws.closed:
-                if strip.num_leds != num_leds:  # also after a change on the device page
-                    num_leds = strip.num_leds
-                    await ws.send_json({"numLeds": num_leds})
-                await ws.send_bytes(strip.frame)
-                await asyncio.sleep(1 / self.engine.fps)
-        except ConnectionError:
-            pass  # viewer closed the page
+            async for _ in ws:  # reading is what answers the viewer closing the page
+                pass
+        finally:
+            sender.cancel()
         return ws
 
 
@@ -277,8 +311,13 @@ class Server:
                 "name": self.device_name(),
                 "local_url": self.device.local_url if self.device else None,
                 "version": __version__,
-                "leds": self.engine.strip.num_leds,
+                "layout": self.engine.layout.kind,
+                "leds": self.strip_leds,
+                "grid": self.grid.to_dict(),
                 "max_leds": MAX_LEDS,
+                "max_side": MAX_SIDE,
+                "max_skip": MAX_SKIP,
+                "color_order": self.engine.strip.order,
                 "mic": self.mic_state(),
                 "wifi": {k: v for k, v in self.wifi.state().items() if k != "networks"} if self.wifi else None,
                 "signal": self.signal(),
@@ -309,21 +348,78 @@ class Server:
         error = self.wifi.enter_setup()
         return web.json_response({"error": error}, status=400 if error else 200)
 
+    async def device_layout(self, request: web.Request) -> web.Response:
+        body = await _json_body(request)
+        kind = body.get("layout")
+        if kind == "grid":
+            grid, error = Grid.parse(body.get("grid"), MAX_LEDS)
+            if error:
+                return web.json_response({"error": error}, status=400)
+            layout = Layout.of_grid(grid)
+        elif kind == "strip":
+            grid, layout = None, Layout.strip(self.strip_leds)
+        else:
+            return web.json_response({"error": "Pick the LED strip or the LED grid."}, status=400)
+        error = self.set_layout(layout)
+        if error:
+            return web.json_response({"error": error}, status=409)
+        if grid:
+            self.grid = grid
+        self.save_settings(layout=kind, grid=self.grid.to_dict())
+        if grid:
+            self.engine.show_pattern("check")
+        else:
+            self.engine.test_strip()
+        return web.json_response({"error": None})
+
+    def set_layout(self, layout: Layout) -> str | None:
+        """Change the connected lights, telling the phones if they're new."""
+        old = self.engine.layout
+        if (layout.kind, layout.size, layout.grid) == (old.kind, old.size, old.grid):
+            return None
+        error = self.engine.set_layout(layout)
+        if error:
+            return error
+        message = self.games_message()
+        for ws in list(self.clients):
+            asyncio.ensure_future(self._send(ws, message))
+        return None
+
+    def save_settings(self, **changes) -> None:
+        if self.state_dir:
+            settings = load_settings(self.state_dir)
+            settings.update(changes)
+            save_settings(settings, self.state_dir)
+
     async def device_leds(self, request: web.Request) -> web.Response:
         body = await _json_body(request)
         count = body.get("count")
         if not isinstance(count, int) or isinstance(count, bool) or not 1 <= count <= MAX_LEDS:
             return web.json_response({"error": f"Enter a number of LEDs from 1 to {MAX_LEDS}."}, status=400)
-        if count != self.engine.strip.num_leds:
-            error = self.engine.set_led_count(count)
-            if error:
-                return web.json_response({"error": error}, status=409)
-        if self.state_dir:
-            settings = load_settings(self.state_dir)
-            settings["leds"] = count
-            save_settings(settings, self.state_dir)
+        if self.engine.layout.kind != "strip":
+            return web.json_response({"error": "Switch to the LED strip first."}, status=409)
+        error = self.set_layout(Layout.strip(count))
+        if error:
+            return web.json_response({"error": error}, status=409)
+        self.strip_leds = count
+        self.save_settings(leds=count)
         self.engine.test_strip()  # shows where the new end is
         return web.json_response({"error": None})
+
+    async def device_color_order(self, request: web.Request) -> web.Response:
+        body = await _json_body(request)
+        order = body.get("order")
+        if order not in ORDERS:
+            return web.json_response({"error": "Unknown color order."}, status=400)
+        self.engine.strip.set_order(order)
+        self.save_settings(color_order=order)
+        return web.json_response({"error": None})
+
+    async def device_pattern(self, request: web.Request) -> web.Response:
+        body = await _json_body(request)
+        pattern = body.get("pattern")
+        error = self.engine.show_pattern(pattern if isinstance(pattern, str) else None)
+        return web.json_response({"error": error}, status=409 if error else 200)
 
     def mic_state(self) -> dict | None:
         mic = self.engine.lights.mic
@@ -362,7 +458,8 @@ class Server:
         lights = self.engine.lights
         return {
             **lights.settings(),
-            "effects": [{"id": k, "name": cls.name, "sound": cls.sound} for k, cls in EFFECTS.items()],
+            "effects": [{"id": k, "name": cls.name, "sound": cls.sound} for k, cls in lights.effects.items()],
+            "layout": lights.kind,
             "mic": bool(lights.mic and lights.mic.available),
             "palettes": [{"id": k, "name": p.name, "stops": palette_gradient(p) if p.stops else None} for k, p in PALETTES.items()],
         }
@@ -460,6 +557,9 @@ def build_app(
     async def sim(_):
         return web.FileResponse(WEB_DIR / "sim.html")
 
+    async def grid(_):
+        return web.FileResponse(WEB_DIR / "grid.html")
+
     async def setup_page(_):
         return web.FileResponse(WEB_DIR / "setup.html", headers={"Cache-Control": "no-store"})
 
@@ -493,7 +593,10 @@ def build_app(
     app.router.add_get("/api/device", server.device_state)
     app.router.add_post("/api/device/update", server.device_update)
     app.router.add_post("/api/device/wifi-setup", server.device_wifi_setup)
+    app.router.add_post("/api/device/layout", server.device_layout)
     app.router.add_post("/api/device/leds", server.device_leds)
+    app.router.add_post("/api/device/color-order", server.device_color_order)
+    app.router.add_post("/api/device/pattern", server.device_pattern)
     app.router.add_post("/api/device/test-leds", server.device_test_leds)
     app.router.add_post("/api/device/mic", server.device_mic)
     app.router.add_get("/api/lights", server.lights_get)
@@ -502,6 +605,7 @@ def build_app(
     app.router.add_get("/invite.svg", server.invite_qr)
     if isinstance(engine.strip, SimStrip):
         app.router.add_get("/sim", sim)
+        app.router.add_get("/grid", grid)
         app.router.add_get("/ws/sim", server.sim_handler)
     app.router.add_static("/static", WEB_DIR)
     app.on_startup.append(start_engine)

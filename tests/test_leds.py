@@ -55,6 +55,14 @@ class StripTest(unittest.TestCase):
         strip.show([(255, 0, 0)] * 2)  # same colors, but a new strip: written
         self.assertEqual(strip.writes[-1], ([(255, 0, 0)] * 2, 0.5))
 
+    def test_sim_shows_a_wrong_color_order(self):
+        strip = SimStrip(1)  # the simulated LEDs are GRB
+        strip.show([(200, 100, 50)])
+        self.assertEqual(strip.frame, bytes([200, 100, 50]))
+        strip.set_order("rgb")  # sent as RGB to GRB LEDs: red and green swap
+        strip.show([(200, 100, 50)])
+        self.assertEqual(strip.frame, bytes([100, 200, 50]))
+
     def test_sim_resize(self):
         strip = SimStrip(2)
         strip.resize(4)
