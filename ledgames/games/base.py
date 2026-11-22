@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..colors import RGB, GameColor
+from ..sounds import PACKS
 
 
 @dataclass
@@ -23,6 +24,20 @@ class Setting:
     label: str
     options: list[Choice]
     default: str
+
+
+# Add to a game's settings to give it sound: it then calls self.play(name)
+# with the names in sounds.py's packs.
+SOUND_SETTING = Setting(
+    "sound",
+    "Sound",
+    [
+        Choice("modern", "Modern", "Smooth sweeps, chimes and chords"),
+        Choice("retro", "Retro", "Chunky beeps and buzzes, like an early home game console"),
+        Choice("off", "Off", "Play without sound"),
+    ],
+    default="modern",
+)
 
 
 @dataclass
@@ -66,6 +81,13 @@ class Game:
         self.players = players or []
         self.clock = clock  # same clock the server uses to timestamp messages
         self.finished = False
+        self.sounds: list[str] = []  # to play this frame; the engine sends them to the speaker
+
+    def play(self, name: str) -> None:
+        """Play a sound from the pack picked in SOUND_SETTING (if any)."""
+        pack = self.settings.get("sound")
+        if pack in PACKS:
+            self.sounds.append(f"{pack}/{name}")
 
     def update(self, dt: float) -> None:
         raise NotImplementedError

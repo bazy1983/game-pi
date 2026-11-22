@@ -9,21 +9,27 @@ sounds. It mixes in a thread of its own (in C), and decodes MP3s.
 The sound card runs at RATE the whole time; the microphone shares its clock,
 so it records at the same rate (see audio.py).
 
-Loading pygame takes ~8 s on a Pi Zero, so `start()` does it in a thread
-once the server is up; sounds play from then on.
+Loading pygame takes ~8 s on a Pi Zero, and making the sounds (see
+sounds.py) ~35 s more, so `start()` does both in a thread once the server
+is up; sounds play from then on. The made sounds are kept in `cache` (one
+file, remade whenever sounds.py changes), so that's only after an update.
 """
 
 import asyncio
+import hashlib
 import logging
-import math
 import os
+import pickle
 import re
 from array import array
 from pathlib import Path
 
+from . import sounds
+from .sounds import RATE, SOUNDS
+
 log = logging.getLogger(__name__)
 
-RATE = 48_000
+CHANNELS = 16  # sounds playing at once (rapid fire adds up)
 BUFFER = 1024  # frames the mixer works ahead: ~21 ms
 LOUDEST = 0.9  # of full scale, at volume 1: headroom so sounds that add up don't clip
 
@@ -45,24 +51,6 @@ def find_device(pcm: Path = Path("/proc/asound/pcm"), cards: Path = Path("/proc/
     return None
 
 
-def chime() -> list[float]:
-    """The test sound: three rising notes that ring out, -1 to 1."""
-    notes = [(523.25, 0.0), (659.25, 0.12), (783.99, 0.24)]  # C5, E5, G5 and when each starts
-    length = 0.9
-    out = [0.0] * int(RATE * length)
-    for freq, start in notes:
-        step = 2 * math.pi * freq / RATE
-        first = int(start * RATE)
-        for i in range(first, len(out)):
-            t = (i - first) / RATE
-            attack = min(1.0, t / 0.005)  # 5 ms, no click
-            out[i] += 0.33 * attack * math.exp(-t * 5) * math.sin(step * (i - first))
-    return out
-
-
-SOUNDS = {"chime": chime}  # name → its samples (mono, RATE a second, -1 to 1)
-
-
 def to_pcm(sound: list[float]) -> bytes:
     """16-bit samples, at full volume less LOUDEST's headroom."""
     gain = 32767 * LOUDEST
@@ -82,12 +70,37 @@ def open_mixer(device: str):
 
     mixer.pre_init(frequency=RATE, size=-16, channels=1, buffer=BUFFER)
     mixer.init()
+    mixer.set_num_channels(CHANNELS)
     return mixer
 
 
+def made_sounds(cache: Path | None) -> dict[str, bytes]:
+    """Every sound in SOUNDS as 16-bit samples, from `cache` if it's from
+    this sounds.py, else made (and saved there)."""
+    version = hashlib.sha256(Path(sounds.__file__).read_bytes()).hexdigest()
+    if cache:
+        try:
+            saved = pickle.loads(cache.read_bytes())
+            if saved["version"] == version and set(saved["sounds"]) == set(SOUNDS):
+                return saved["sounds"]
+        except (OSError, ValueError, KeyError, TypeError, pickle.UnpicklingError, EOFError):
+            pass
+    made = {name: to_pcm(make()) for name, make in SOUNDS.items()}
+    if cache:
+        try:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cache.with_suffix(".tmp")
+            tmp.write_bytes(pickle.dumps({"version": version, "sounds": made}))
+            tmp.replace(cache)
+        except OSError as e:
+            log.warning("speaker: couldn't save the sounds: %s", e)
+    return made
+
+
 class Speaker:
-    def __init__(self, device: str = "auto", opener=open_mixer):
+    def __init__(self, device: str = "auto", opener=open_mixer, cache: Path | None = None):
         self.device = find_device() if device == "auto" else device
+        self.cache = cache  # where the made sounds are kept
         self.on = True
         self.volume = 0.5  # 0–1, set on the device page
         self.mixer = None  # pygame.mixer, once it's open
@@ -123,21 +136,30 @@ class Speaker:
         if not self.available:
             return
         try:
-            self.mixer = await asyncio.to_thread(self._open, self.device)
+            mixer = await asyncio.to_thread(self._open, self.device)
+            self._sounds = await asyncio.to_thread(self._make, mixer, self.cache)
         except Exception as e:  # pygame missing, or the sound card won't open
             log.warning("speaker: %s", e)
             return
+        self.mixer = mixer
         log.info("speaker: ready on %s", self.device)
 
-    def play(self, name: str) -> bool:
-        """Play one of SOUNDS, cutting off any sound still playing. Returns
-        False if it can't play (no speaker, sound off, or not ready yet)."""
-        if not (self.mixer and self.on):
-            return False
+    @staticmethod
+    def _make(mixer, cache: Path | None) -> dict:
+        return {name: mixer.Sound(buffer=pcm) for name, pcm in made_sounds(cache).items()}
+
+    def play(self, name: str, alone: bool = False) -> bool:
+        """Play one of SOUNDS, over whatever else is playing; the same sound
+        starts over if it's still playing (rapid fire). `alone` cuts off
+        every other sound first. Returns False if it can't play (no speaker,
+        sound off, not ready yet, or no such sound)."""
         sound = self._sounds.get(name)
-        if sound is None:
-            sound = self._sounds[name] = self.mixer.Sound(buffer=to_pcm(SOUNDS[name]()))
-        self.mixer.stop()
+        if not (self.mixer and self.on and sound):
+            return False
+        if alone:
+            self.mixer.stop()
+        else:
+            sound.stop()
         sound.set_volume(volume_level(self.volume))
         sound.play()
         return True

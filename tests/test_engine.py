@@ -220,6 +220,27 @@ class GridTest(unittest.TestCase):
         self.assertTrue(engine.lights.active)  # back on the strip, the effect is still picked
 
 
+class SpeakerTest(unittest.TestCase):
+    def test_game_sounds_go_to_the_speaker_once(self):
+        played = []
+        engine, clock = make()
+        engine.speaker = type("Speaker", (), {"play": lambda self, name: played.append(name)})()
+        engine.open("color_shooter", "normal", {"sound": "retro"}, "A")
+        engine.input("A", {"fire": engine.game.colors[0].name})
+        engine.tick(1 / 30)
+        self.assertEqual(played, ["retro/shoot"])
+        self.assertEqual(engine.game.sounds, [])
+        engine.tick(1 / 30)
+        self.assertEqual(played, ["retro/shoot"])
+
+    def test_no_speaker_still_clears_them(self):
+        engine, clock = make()
+        engine.open("color_shooter", "normal", {"sound": "modern"}, "A")
+        engine.input("A", {"fire": engine.game.colors[0].name})
+        engine.tick(1 / 30)
+        self.assertEqual(engine.game.sounds, [])
+
+
 class SinglePlayerTest(unittest.TestCase):
     def test_color_shooter_stops_when_player_drops(self):
         e, _ = make()

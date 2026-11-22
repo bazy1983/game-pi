@@ -485,7 +485,7 @@ class Server:
             return web.json_response({"error": "No speaker found."}, status=409)
         if not speaker.on:
             return web.json_response({"error": "The sound is off."}, status=409)
-        if not speaker.play("chime"):
+        if not speaker.play("chime", alone=True):
             return web.json_response({"error": "The speaker is still starting. Try again in a few seconds."}, status=409)
         return web.json_response({"error": None})
 

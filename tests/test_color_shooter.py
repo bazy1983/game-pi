@@ -243,5 +243,74 @@ class PoisonTest(unittest.TestCase):
         self.assertTrue(g.state()["poisoned"])
 
 
+
+class SoundTest(unittest.TestCase):
+    """The game names its sounds; the engine plays them (see test_engine)."""
+
+    def test_shoot_hit_and_grow(self):
+        g = make(sound="retro")
+        g.snake = [RED, BLUE, GREEN]
+        g.on_input("p", {"fire": "red"})
+        self.assertEqual(g.sounds, ["retro/shoot"])
+        fly_to_head(g)
+        self.assertEqual(g.sounds, ["retro/shoot", "retro/hit"])
+        g.sounds.clear()
+        g.spawn_timer = 0
+        g.update(2.0)
+        self.assertEqual(g.sounds, ["retro/grow"])
+
+    def test_miss(self):
+        g = make(sound="modern")
+        g.snake = [RED, BLUE]
+        g.on_input("p", {"fire": "blue"})
+        fly_to_head(g)
+        self.assertEqual(g.sounds, ["modern/shoot", "modern/miss"])
+
+    def test_win_and_lose_instead_of_hit_and_miss(self):
+        g = make(difficulty="easy", sound="modern")
+        g.score = 99
+        g.snake = [RED]
+        g.on_input("p", {"fire": "red"})
+        fly_to_head(g)
+        self.assertEqual(g.sounds[-1], "modern/win")
+        g = make(20, sound="modern")
+        g.snake = [RED] * (20 - SHOOTER_SIZE)
+        g.on_input("p", {"fire": "green"})
+        fly_to_head(g)
+        self.assertEqual(g.sounds[-1], "modern/lose")
+        self.assertNotIn("modern/miss", g.sounds)
+
+    def test_poison_sounds(self):
+        g = make(difficulty="hard", sound="modern")
+        g.spawn_timer = -1e9
+        g.spit_timer = 0.01
+        g.update(0.02)
+        self.assertEqual(g.sounds, ["modern/spit"])
+        g.poisons = [Shot(50.0, RED)]
+        g.on_input("p", {"fire": "red"})
+        g.update(1.0)
+        self.assertIn("modern/block", g.sounds)
+        g.sounds.clear()
+        g.poisons = [Shot(5.0, BLUE)]
+        g.update(0.5)
+        self.assertEqual(g.sounds, ["modern/poisoned"])
+        g.on_input("p", {"fire": "red"})
+        self.assertEqual(g.sounds, ["modern/poisoned", "modern/dud"])
+
+    def test_off_and_no_setting_are_silent(self):
+        for g in (make(sound="off"), make()):
+            g.snake = [RED]
+            g.on_input("p", {"fire": "red"})
+            fly_to_head(g)
+            self.assertEqual(g.sounds, [])
+
+    def test_every_sound_exists_in_every_pack(self):
+        from ledgames.sounds import PACKS, SOUNDS
+
+        names = {"shoot", "hit", "miss", "grow", "spit", "block", "poisoned", "dud", "win", "lose"}
+        for pack in PACKS:
+            self.assertEqual(names - {n.split("/")[1] for n in SOUNDS if n.startswith(pack + "/")}, set(), pack)
+
+
 if __name__ == "__main__":
     unittest.main()

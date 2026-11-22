@@ -84,7 +84,7 @@ def main() -> None:
             engine.lights.mic.sensitivity = float(saved)
 
     if args.speaker != "off":
-        engine.speaker = Speaker(args.speaker)
+        engine.speaker = Speaker(args.speaker, cache=state_dir / "sounds.cache")
         engine.speaker.update(saved_settings.get("speaker", {}) if isinstance(saved_settings.get("speaker"), dict) else {})
 
     device = wifi = None

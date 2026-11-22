@@ -254,7 +254,7 @@ class WebTest(unittest.IsolatedAsyncioTestCase):
             r = await self.client.post("/api/device/speaker/test", json={})
             self.assertEqual(r.status, 409)  # still starting
             speaker.mixer = type("Mixer", (), {"stop": lambda self: None, "quit": lambda self: None})()
-            speaker.play = lambda name: played.append((name, speaker.volume)) or True
+            speaker.play = lambda name, alone=False: played.append((name, alone, speaker.volume)) or True
             body = await (await self.client.get("/api/device")).json()
             self.assertEqual(body["speaker"], {"available": True, "on": True, "volume": 0.5})
             for bad in ({"volume": 2}, {"on": "no"}):
@@ -264,7 +264,7 @@ class WebTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await r.json())["speaker"]["volume"], 0.8)
             r = await self.client.post("/api/device/speaker/test", json={})
             self.assertEqual(r.status, 200)
-            self.assertEqual(played, [("chime", 0.8)])
+            self.assertEqual(played, [("chime", True, 0.8)])  # cuts off any other sound
             await self.client.post("/api/device/speaker", json={"on": False})
             r = await self.client.post("/api/device/speaker/test", json={})
             self.assertEqual(r.status, 409)

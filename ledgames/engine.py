@@ -294,6 +294,7 @@ class Engine:
         elif game is not None and not game.finished:
             game.update(dt)
             game.render(self.pixels)
+            self._play(game)
         elif self._pattern is not None:
             chain = self._draw_pattern(self._pattern[0])
         elif self._test is not None:
@@ -315,6 +316,14 @@ class Engine:
         self._shown = time.monotonic()
         self.strip.show(chain or self.layout.to_chain(self.pixels), level or 1.0)
         self._changed()
+
+    def _play(self, game: Game) -> None:
+        """Send the game's sounds to the speaker."""
+        if game.sounds:
+            if self.speaker:
+                for name in game.sounds:
+                    self.speaker.play(name)
+            game.sounds.clear()
 
     def _draw_pattern(self, name: str) -> list[RGB] | None:
         if name == "first":

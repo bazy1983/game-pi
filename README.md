@@ -28,6 +28,14 @@ fire for 3 s.
 
 Fire mode: **Rapid fire** (no limit) or **Cooldown** (0.3 s between shots).
 
+Sound (needs the speaker): **Modern** (smooth sweeps, chimes and chords),
+**Retro** (chunky beeps and buzzes, like an early home game console's sound
+chip) or **Off**. There are sounds for firing, hits, misses, the snake
+growing, poison being spit, destroyed and hitting you, firing while
+poisoned, and winning or losing. All of them are made in code
+(`ledgames/sounds.py`); there are no sound files. Other games get sound by
+adding `SOUND_SETTING` to their settings and calling `self.play(name)`.
+
 Only one person plays at a time; anyone else who opens the page watches.
 
 ### Fast Tap (1–6 players)

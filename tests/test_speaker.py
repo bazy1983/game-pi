@@ -3,7 +3,9 @@ import unittest
 from array import array
 from pathlib import Path
 
-from ledgames.speaker import RATE, Speaker, chime, find_device, to_pcm, volume_level
+from ledgames.sounds import PEAK, RATE, SOUNDS, chime, mix, retro, tone
+from ledgames import speaker as speaker_module
+from ledgames.speaker import Speaker, find_device, made_sounds, to_pcm, volume_level
 
 PCM = """00-00: MAI PCM i2s-hifi-0 : MAI PCM i2s-hifi-0 : playback 1
 01-00: Google voiceHAT SoundCard HiFi voicehat-hifi-0 : Google voiceHAT SoundCard HiFi voicehat-hifi-0 : playback 1 : capture 1
@@ -44,6 +46,30 @@ class SoundTest(unittest.TestCase):
         self.assertEqual(len(sound), int(RATE * 0.9))
         self.assertLessEqual(max(abs(s) for s in sound), 1.0)
 
+    def test_every_sound_is_short_and_in_range(self):
+        for name, make in SOUNDS.items():
+            sound = make()
+            self.assertTrue(0 < len(sound) <= 2.5 * RATE, name)
+            self.assertLessEqual(max(abs(v) for v in sound), 1.0, name)
+
+    def test_mix_lines_up_and_limits(self):
+        out = mix((0, [0.6, 0.6]), (1 / RATE, [0.6]))
+        self.assertEqual(len(out), 2)
+        self.assertAlmostEqual(out[0], 0.6 * PEAK / 1.2)
+        self.assertAlmostEqual(out[1], PEAK)
+
+    def test_tone_starts_and_ends_quietly(self):
+        t = tone(0.1, 440, vol=0.5)
+        self.assertLess(abs(t[0]), 0.01)
+        self.assertLess(abs(t[-1]), 0.01)
+
+    def test_retro_is_frames_of_fixed_levels(self):
+        out = retro([("pure", 31, 15), ("", 0, 0), ("low", 0, 0)])
+        self.assertEqual(len(out), 3 * RATE // 60)
+        frame = RATE // 60
+        self.assertEqual({abs(v) for v in out[:frame]}, {0.6})  # a square wave at full volume
+        self.assertEqual(set(out[frame:]), {0.0})
+
 
 class SettingsTest(unittest.TestCase):
     def test_update(self):
@@ -61,6 +87,10 @@ class FakeSound:
         self.length = len(buffer)
         self.volume = None
         self.plays = 0
+        self.stops = 0
+
+    def stop(self):
+        self.stops += 1
 
     def set_volume(self, v):
         self.volume = v
@@ -78,6 +108,9 @@ class FakeMixer:
 
     def get_busy(self):
         return False
+
+    def set_num_channels(self, n):
+        pass
 
     def stop(self):
         self.stops += 1
@@ -99,7 +132,11 @@ class PlayTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(sp.play("chime"))
         sound = sp._sounds["chime"]
         self.assertEqual((sound.plays, sound.volume, sound.length), (2, 0.25, int(RATE * 0.9) * 2))
-        self.assertEqual(mixer.stops, 2)  # each cuts off the last
+        self.assertEqual(sound.stops, 2)  # the same sound starts over
+        self.assertEqual(mixer.stops, 0)
+        self.assertTrue(sp.play("retro/hit", alone=True))
+        self.assertEqual(mixer.stops, 1)  # cuts off everything
+        self.assertFalse(sp.play("retro/nope"))
         sp.update({"on": False})
         self.assertFalse(sp.play("chime"))
         sp.close()
@@ -119,6 +156,30 @@ class PlayTest(unittest.IsolatedAsyncioTestCase):
         sp = Speaker(device=None, opener=lambda dev: self.fail("opened"))
         await sp.start()
         self.assertFalse(sp.play("chime"))
+
+
+
+class CacheTest(unittest.TestCase):
+    def test_made_once_then_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "sounds.cache"
+            first = made_sounds(cache)
+            self.assertTrue(cache.exists())
+            self.assertEqual(set(first), set(SOUNDS))
+            self.assertEqual(first["chime"], to_pcm(chime()))
+            real = speaker_module.to_pcm
+            speaker_module.to_pcm = lambda s: self.fail("made again")
+            try:
+                self.assertEqual(made_sounds(cache), first)
+            finally:
+                speaker_module.to_pcm = real
+
+    def test_a_bad_cache_is_remade(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "sounds.cache"
+            cache.write_bytes(b"not a cache")
+            self.assertEqual(set(made_sounds(cache)), set(SOUNDS))
+            self.assertEqual(set(made_sounds(cache)), set(SOUNDS))
 
 
 if __name__ == "__main__":

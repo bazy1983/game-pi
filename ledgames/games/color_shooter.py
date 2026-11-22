@@ -18,7 +18,7 @@ from typing import Any
 from ..colors import OFF, PALETTE, RGB, WHITE, GameColor, scale
 from ..effects.fireworks import Fireworks
 from ..effects.red_fill import RedFill
-from .base import Choice, Game, GameInfo, Setting
+from .base import SOUND_SETTING, Choice, Game, GameInfo, Setting
 
 SHOOTER_SIZE = 3
 INITIAL_FILL = 0.15  # fraction of the strip covered by the snake at start
@@ -82,7 +82,8 @@ class ColorShooter(Game):
                     Choice("cooldown", "Cooldown", f"{COOLDOWN:g}s between shots"),
                 ],
                 default="rapid",
-            )
+            ),
+            SOUND_SETTING,
         ],
     )
 
@@ -148,6 +149,7 @@ class ColorShooter(Game):
             self.snake.append(self._random_color())
             if self._check_lost():
                 return
+            self.play("grow")
 
         self.poisoned_for = max(0.0, self.poisoned_for - dt)
         if self.cfg.poison and self.snake:
@@ -155,6 +157,7 @@ class ColorShooter(Game):
             if self.spit_timer <= 0:
                 self.spit_timer = self.rng.uniform(*SPIT_INTERVAL)
                 self.poisons.append(Shot(float(self.head - 1), self._random_color()))
+                self.play("spit")
 
         shot_from = [s.pos for s in self.shots]
         poison_from = [p.pos for p in self.poisons]
@@ -170,6 +173,7 @@ class ColorShooter(Game):
                 self.poisoned_for = POISON_DURATION
                 self.poison_color = poison.color
                 self.poison_hits += 1
+                self.play("poisoned")
 
         # Resolve shots highest-first so a shot that grows the snake is
         # resolved before the shots behind it.
@@ -198,6 +202,7 @@ class ColorShooter(Game):
                 i = self.shots.index(shot)
                 del self.shots[i], shot_from[i]
                 self.poisons.remove(poison)
+                self.play("block")
 
     def _hit(self, shot: Shot) -> None:
         if shot.color == self.snake[0]:
@@ -208,10 +213,14 @@ class ColorShooter(Game):
                 self.shots.clear()
                 self.poisons.clear()
                 self.effect = Fireworks(self.num_leds, rng=self.rng)
+                self.play("win")
+            else:
+                self.play("hit")
         else:
             self.snake.insert(0, shot.color)
             self.score -= 1
-            self._check_lost()
+            if not self._check_lost():
+                self.play("miss")
 
     def _check_lost(self) -> bool:
         if len(self.snake) <= self.max_length:
@@ -221,16 +230,21 @@ class ColorShooter(Game):
         self.shots.clear()
         self.poisons.clear()
         self.effect = RedFill(self.num_leds)
+        self.play("lose")
         return True
 
     def on_input(self, player: str, action: dict[str, Any]) -> None:
         if self.status != "playing":
             return
         color = next((c for c in self.colors if c.name == action.get("fire")), None)
-        if color is None or self.poisoned_for > 0 or self.t - self.last_fire < self.cooldown:
+        if color is None or self.t - self.last_fire < self.cooldown:
+            return
+        if self.poisoned_for > 0:
+            self.play("dud")  # can't fire yet
             return
         self.last_fire = self.t
         self.shots.append(Shot(float(SHOOTER_SIZE), color))
+        self.play("shoot")
 
     def _random_color(self) -> GameColor:
         return self.rng.choice(self.colors)
