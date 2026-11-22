@@ -23,7 +23,7 @@ from ..colors import OFF, RGB, WHITE, GameColor, scale
 from ..effects.confetti import Confetti
 from ..effects.fireworks import Fireworks
 from ..effects.red_fill import RedFill
-from .base import Choice, Game, GameInfo
+from .base import SOUND_SETTING, Choice, Game, GameInfo
 
 PLAYER_COLORS = [
     GameColor("blue", (0, 0, 255), "#2a5cff"),
@@ -105,6 +105,7 @@ class Morse(Game):
             Choice("hard", "Hard", "5–6 letters, fast · 2 guesses, the word plays only 3 times"),
         ],
         default_difficulty="easy",
+        settings=[SOUND_SETTING],
         max_players=len(PLAYER_COLORS),
         player_colors=PLAYER_COLORS,
     )
@@ -130,12 +131,14 @@ class Morse(Game):
         self.status = "playing"
         self.stage = "intro"  # intro → play → last (hard, after the last playback)
         self.timer = INTRO_TIME  # intro / last: time left; play: time into this playback
-        self.play = 0  # playbacks started
+        self.playback = 0  # playbacks started
         self.attempts = [self.cfg.attempts] * len(self.players)
         self.wrong = [0] * len(self.players)
         self.left: set[int] = set()
         self.winners: list[int] = []
         self.effect: Confetti | Fireworks | RedFill | None = None
+        self.beeped = 0  # pulses of this playback that have beeped
+        self.ended = False  # this playback's end-of-word sound has played
 
     @property
     def solo(self) -> bool:
@@ -155,19 +158,35 @@ class Morse(Game):
         if self.stage == "intro":
             self.timer -= dt
             if self.timer <= 0:
-                self.stage, self.timer, self.play = "play", 0.0, 1
+                self.stage, self.timer, self.playback = "play", 0.0, 1
         elif self.stage == "play":
             self.timer += dt
             if self.timer >= self.play_time:
-                if self.cfg.plays is not None and self.play >= self.cfg.plays:
+                if self.cfg.plays is not None and self.playback >= self.cfg.plays:
                     self.stage, self.timer = "last", LAST_CHANCE
-                else:
-                    self.timer -= self.play_time
-                    self.play += 1
+                    self.play("sudden")
+                    return
+                self.timer -= self.play_time
+                self.playback += 1
+                self.beeped, self.ended = 0, False
+            self._beep()
         elif self.stage == "last":
+            before = math.ceil(self.timer)
             self.timer -= dt
             if self.timer <= 0:
                 self._lose()
+            elif math.ceil(self.timer) < before:
+                self.play("tick")  # every second of the last chance
+
+    def _beep(self) -> None:
+        """The pulses as beeps, each as long as its flash (a dot or a dash)."""
+        while self.beeped < len(self.pulses) and self.timer >= self.pulses[self.beeped][0]:
+            start, end, _ = self.pulses[self.beeped]
+            self.beeped += 1
+            self.play(f"beep_{round((end - start) * 1000)}")
+        if not self.ended and self.timer >= self.flash_at:
+            self.ended = True
+            self.play("word_end")
 
     def on_input(self, player: str, action: dict[str, Any]) -> None:
         if self.status != "playing" or self.stage == "intro" or player not in self.players:
@@ -186,6 +205,8 @@ class Morse(Game):
         self.wrong[idx] += 1
         if not any(self._in(i) for i in range(len(self.players))):
             self._lose()
+        else:
+            self.play("miss" if self.attempts[idx] else "out")  # out of guesses
 
     def on_leave(self, player: str) -> None:
         if player not in self.players:
@@ -197,6 +218,7 @@ class Morse(Game):
     def _win(self, idx: int) -> None:
         self.status = "won"
         self.winners = [idx]
+        self.play("win")
         if self.solo:
             self.effect = Fireworks(self.num_leds, rng=self.rng)
         else:
@@ -205,6 +227,7 @@ class Morse(Game):
     def _lose(self) -> None:
         self.status = "lost"
         self.effect = RedFill(self.num_leds)
+        self.play("lose")
 
     # --- output -----------------------------------------------------------------
 
@@ -249,7 +272,7 @@ class Morse(Game):
             "solo": self.solo,
             "length": len(self.word),
             "letter": letter,  # which letter is playing (None between playbacks)
-            "play": self.play,
+            "play": self.playback,
             "plays": self.cfg.plays,
             "last_chance": math.ceil(self.timer) if self.stage == "last" else None,
             "attempts": self.cfg.attempts,

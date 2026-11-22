@@ -33,8 +33,7 @@ Sound (needs the speaker): **Modern** (smooth sweeps, chimes and chords),
 chip) or **Off**. There are sounds for firing, hits, misses, the snake
 growing, poison being spit, destroyed and hitting you, firing while
 poisoned, and winning or losing. All of them are made in code
-(`ledgames/sounds.py`); there are no sound files. Other games get sound by
-adding `SOUND_SETTING` to their settings and calling `self.play(name)`.
+(`ledgames/sounds.py`); there are no sound files. See Sound below.
 
 Only one person plays at a time; anyone else who opens the page watches.
 
@@ -55,6 +54,8 @@ coming until someone wins the round or everyone is out.
   colors, green lasts 0.3 s.
 - Fair over Wi-Fi: phones keep their clock in sync with the Pi and each tap
   carries the time it happened, so a laggier connection doesn't lose.
+- Sound: each round starts with a "ready" (a drum roll for sudden death);
+  early taps buzz. The flashes are silent on purpose (see Sound below).
 
 ### Sumo (1–2 players)
 A tapping tug-of-war. Red starts with the bottom quarter of the strip, blue
@@ -206,6 +207,32 @@ beat. Playing alone, the phone remembers your best for each difficulty.
 
 Blocks never get faster than 2.5 × the first one. Taps count from when they
 happened on the phone, so Wi-Fi delay doesn't move the block.
+
+## Sound
+
+With the speaker (see Hardware), every game has a **Sound** setting:
+**Modern** (smooth sweeps, chimes and chords), **Retro** (like an early home
+game console's sound chip: square waves on a few out-of-tune pitches, noise,
+and changes 60 times a second) or **Off**. All the sounds are made in code
+(`ledgames/sounds.py`), so there are no sound files.
+
+Sounds never tell you more than the strip does:
+
+- **Fast Tap:** the flashes are silent; a sound would tell you when to look.
+- **Red Light, Green Light:** every light change has its sound, and so do
+  fake-outs, which sound like a real red.
+- **Hot Potato:** the fuse ticks faster as the potato heats up, following the
+  heat the strip shows. On medium and hard that's as rough a hint as the colors.
+- **Simon Says:** every color has its own note, played with the sequence. In
+  "all at once" mode, presses are silent, as they don't show on the strip
+  either, so nobody can copy.
+- **Morse Code:** the dots and dashes beep as long as they flash, like a
+  telegraph. (With Sound off, it's the strip only.)
+
+The rest: countdowns, taps and bounces, hits and misses, rounds won and
+lost, and a win or lose at the end. A game gets sound by adding
+`SOUND_SETTING` to its settings and calling `self.play(name)` with a name
+from `sounds.py`'s packs (every pack has every sound).
 
 ## Lights
 

@@ -9,7 +9,8 @@ Game sounds come in packs, named "<pack>/<sound>":
           a coarse set of pitches, a noise generator, 16 volume steps, and
           nothing changes faster than 60 times a second (see retro())
 
-A game picks a pack and asks for sounds by name (see games/base.py).
+A game picks a pack and asks for sounds by name (see games/base.py). Every
+pack has every sound; games share the ones that fit (win, lose).
 """
 
 import math
@@ -138,6 +139,30 @@ def chime() -> list[float]:
 
 
 C5, E5, G5, C6 = 523.25, 659.25, 783.99, 1046.5
+SIMON_NOTES = (329.6, 440.0, 554.4, 659.3, 880.0)  # one per color, a pentatonic scale: any order sounds fine
+MORSE_BEEPS = (180, 250, 350, 540, 750, 1050)  # ms: Morse Code's dots and dashes, at each difficulty's speed
+HEATS = ("freezing", "cold", "cool", "warm", "hot", "burning")  # Hot and Cold, coldest first
+
+
+def _modern_heat(k: int) -> list[float]:
+    """Hot and Cold's heats: higher and busier the hotter; freezing is an icy shimmer."""
+    if k == 0:
+        return mix((0, tone(0.5, 2637, vol=0.15, decay=0.2, vibrato=(0.01, 8))), (0, tone(0.5, 3136, vol=0.1, decay=0.15)))
+    freq = (523.25, 659.25, 783.99, 987.8, 1174.7)[k - 1]
+    parts = [(0, tone(0.45, freq, wave="sine" if k < 3 else "triangle", vol=0.38, decay=0.2,
+                      vibrato=(0.03, 18) if k == 5 else (0.0, 0.0)))]
+    if k >= 4:
+        parts.append((0, noise(0.35, 0.08 * (k - 3), decay=0.15, smooth=0.6)))  # a sizzle
+    return mix(*parts)
+
+
+def _retro_heat(k: int) -> list[float]:
+    if k == 0:
+        return retro([("pure", 3, 6)] * 12)
+    if k <= 3:
+        return retro([("pure", (31, 24, 18)[k - 1], 10)] * 14)
+    a, b = (13, 14) if k == 4 else (9, 10)
+    return retro([("pure", a if f % 2 else b, 11 + (k == 5)) for f in range(16 + 4 * (k == 5))])
 
 MODERN = {
     "shoot": lambda: tone(0.08, 700, 1600, "triangle", vol=0.45, decay=0.05),
@@ -155,6 +180,45 @@ MODERN = {
                         (0.32, tone(0.3, 370.0, wave="triangle", vol=0.45, decay=0.25)),
                         (0.64, tone(0.3, 349.2, wave="triangle", vol=0.45, decay=0.25)),
                         (0.96, tone(0.9, 329.6, wave="triangle", vol=0.45, decay=0.5, vibrato=(0.02, 6)))),
+    # Fast Tap
+    "ready": lambda: mix((0, tone(0.09, 660, vol=0.35, decay=0.05)), (0.15, tone(0.09, 880, vol=0.35, decay=0.05))),
+    "sudden": lambda: mix((0, tone(0.18, 98, vol=0.6, decay=0.08)), (0.22, tone(0.18, 98, vol=0.6, decay=0.08)),
+                          (0.44, tone(0.6, 147, 294, wave="triangle", vol=0.45, decay=0.35))),
+    "out": lambda: mix((0, tone(0.12, 440, wave="triangle", vol=0.4)), (0.13, tone(0.22, 330, wave="triangle", vol=0.4, decay=0.12))),
+    "round_win": lambda: mix((0, tone(0.35, 1046.5, vol=0.4, decay=0.12)), (0.1, tone(0.5, 1568, vol=0.35, decay=0.18))),
+    "round_lose": lambda: tone(0.45, 330, 165, wave="triangle", vol=0.5, decay=0.25),
+    # Countdowns, taps and bounces (Sumo, Ping Pong, Red Light, Hot Potato)
+    "count": lambda: tone(0.12, 880, vol=0.4, decay=0.06),
+    "go": lambda: mix((0, tone(0.3, 1320, vol=0.4, decay=0.15)), (0, tone(0.3, 1760, vol=0.2, decay=0.12))),
+    "blip_low": lambda: tone(0.05, 330, wave="triangle", vol=0.35, decay=0.02),
+    "blip_high": lambda: tone(0.05, 660, wave="triangle", vol=0.35, decay=0.02),
+    "point": lambda: mix((0, tone(0.15, 784, vol=0.35, decay=0.08)), (0.08, tone(0.3, 1175, vol=0.35, decay=0.12))),
+    "faster": lambda: tone(0.35, 400, 1600, wave="triangle", vol=0.35, decay=0.2),
+    "tick": lambda: tone(0.03, 2000, vol=0.25, decay=0.008),
+    # Simon Says
+    **{f"note{k + 1}": (lambda f=f: tone(0.4, f, wave="triangle", vol=0.45, decay=0.25)) for k, f in enumerate(SIMON_NOTES)},
+    # Morse Code
+    **{f"beep_{ms}": (lambda ms=ms: tone(ms / 1000, 700, vol=0.45)) for ms in MORSE_BEEPS},
+    "word_end": lambda: mix((0, tone(0.2, 988, vol=0.3, decay=0.1)), (0.12, tone(0.35, 740, vol=0.3, decay=0.15))),
+    # Red Light, Green Light
+    "light_green": lambda: tone(0.25, 523, 1046, wave="triangle", vol=0.4, decay=0.15),
+    "light_yellow": lambda: mix((0, tone(0.1, 880, vol=0.35)), (0.16, tone(0.1, 880, vol=0.35))),
+    "light_red": lambda: tone(0.4, 600, 200, wave="triangle", vol=0.5, decay=0.2),
+    "slide": lambda: tone(0.5, 800, 150, wave="triangle", vol=0.4, decay=0.3),
+    # Hot Potato
+    "throw": lambda: mix((0, noise(0.18, 0.35, decay=0.08, smooth=0.25)), (0, tone(0.18, 300, 900, vol=0.2, decay=0.08))),
+    "catch": lambda: tone(0.08, 220, 140, vol=0.45, decay=0.03),
+    "boom": lambda: mix((0, noise(0.8, 0.8, decay=0.25, smooth=0.08)), (0, tone(0.6, 90, 40, vol=0.6, decay=0.25))),
+    # Hot and Cold
+    "dig": lambda: mix((0, noise(0.08, 0.5, decay=0.03, smooth=0.1)), (0, tone(0.1, 120, 70, vol=0.5, decay=0.04))),
+    **{f"heat_{h}": (lambda k=k: _modern_heat(k)) for k, h in enumerate(HEATS)},
+    "treasure": lambda: mix(*((0.07 * k, tone(0.45, f, vol=0.25, decay=0.15)) for k, f in enumerate((1046.5, 1318.5, 1568, 2093)))),
+    # Tower Stack
+    "chop": lambda: mix((0, noise(0.06, 0.45, decay=0.02, smooth=0.5)), (0, tone(0.1, 196, wave="triangle", vol=0.4, decay=0.04))),
+    "perfect": lambda: mix((0, tone(0.3, 1568, vol=0.35, decay=0.12)), (0, tone(0.3, 2093, vol=0.2, decay=0.1))),
+    "grew": lambda: tone(0.3, 523, 1046, vol=0.35, decay=0.15),
+    "fall": lambda: tone(0.7, 600, 80, wave="triangle", vol=0.45, decay=0.4),
+    "crumble": lambda: mix((0, noise(1.0, 0.5, decay=0.35, smooth=0.05)), (0, tone(0.8, 60, 40, vol=0.4, decay=0.3))),
 }
 
 RETRO = {
@@ -169,6 +233,45 @@ RETRO = {
     "win": lambda: retro([("pure", d, 12) for d, n in ((31, 6), (27, 6), (24, 6), (20, 6), (24, 6), (20, 6)) for _ in range(n)]
                          + [("pure", 15, 12 - k * 12 // 30) for k in range(30)]),
     "lose": lambda: retro([("low", 10 + k // 3, 12) for k in range(48)] + [("noise", 31, max(0, 10 - k // 2)) for k in range(20)]),
+    # Fast Tap
+    "ready": lambda: retro([("pure", 24, 10)] * 6 + [("", 0, 0)] * 3 + [("pure", 20, 10)] * 6),
+    "sudden": lambda: retro(([("low", 31, 12)] * 6 + [("", 0, 0)] * 6) * 2 + [("low", 31 - k // 2, 12) for k in range(30)]),
+    "out": lambda: retro([("low", 18, 12)] * 10 + [("low", 18, v) for v in (8, 4)]),
+    "round_win": lambda: retro([("pure", 15, 12)] * 5 + [("pure", 11, 12)] * 5 + [("pure", 7, v) for v in range(12, 0, -1)]),
+    "round_lose": lambda: retro([("low", 14 + k // 2, 11) for k in range(24)]),
+    # Countdowns, taps and bounces
+    "count": lambda: retro([("pure", 20, 10)] * 6),
+    "go": lambda: retro([("pure", 10, 12)] * 15),
+    "blip_low": lambda: retro([("low", 16, 9)] * 2),
+    "blip_high": lambda: retro([("pure", 22, 9)] * 2),
+    "point": lambda: retro([("pure", 15, 11)] * 4 + [("pure", 11, 11)] * 8),
+    "faster": lambda: retro([("pure", 31 - k, 10) for k in range(24)]),
+    "tick": lambda: retro([("noise", 1, 6)]),
+    # Simon Says
+    **{f"note{k + 1}": (lambda d=d: retro([("pure", d, 11)] * 12 + [("pure", d, v) for v in (9, 7, 5, 3, 2, 1)]))
+       for k, d in enumerate((31, 26, 22, 19, 15))},
+    # Morse Code
+    **{f"beep_{ms}": (lambda ms=ms: retro([("pure", 21, 10)] * round(ms * 60 / 1000))) for ms in MORSE_BEEPS},
+    "word_end": lambda: retro([("pure", 12, 10)] * 6 + [("pure", 16, 10)] * 10),
+    # Red Light, Green Light
+    "light_green": lambda: retro([("pure", 24 - 2 * k, 11) for k in range(9)] + [("pure", 6, 11)] * 6),
+    "light_yellow": lambda: retro([("pure", 15, 10)] * 5 + [("", 0, 0)] * 4 + [("pure", 15, 10)] * 5),
+    "light_red": lambda: retro([("low", 10 + k, 12) for k in range(18)]),
+    "slide": lambda: retro([("pure", 8 + k, 10) for k in range(24)]),
+    # Hot Potato
+    "throw": lambda: retro([("noise", 12 - k, 8) for k in range(8)]),
+    "catch": lambda: retro([("low", 26, 10)] * 3),
+    "boom": lambda: retro([("noise", 25 + k // 6, max(0, 15 - k // 3)) for k in range(45)]),
+    # Hot and Cold
+    "dig": lambda: retro([("noise", 28, 12), ("noise", 30, 9), ("low", 31, 8), ("low", 31, 4)]),
+    **{f"heat_{h}": (lambda k=k: _retro_heat(k)) for k, h in enumerate(HEATS)},
+    "treasure": lambda: retro([("pure", d, 12) for d in (15, 12, 9, 7) for _ in range(5)] + [("pure", 7, v) for v in range(12, 0, -1)]),
+    # Tower Stack
+    "chop": lambda: retro([("noise", 4, 11), ("noise", 6, 8), ("low", 30, 6)]),
+    "perfect": lambda: retro([("pure", 9, 12)] * 4 + [("pure", 7, 12)] * 8),
+    "grew": lambda: retro([("pure", 20 - 2 * k, 11) for k in range(8)]),
+    "fall": lambda: retro([("pure", 6 + k, 10) for k in range(25)] + [("noise", 30, 8)] * 4),
+    "crumble": lambda: retro([("noise", 20 + k // 4, max(0, 12 - k // 5)) for k in range(60)]),
 }
 
 PACKS = {"modern": MODERN, "retro": RETRO}

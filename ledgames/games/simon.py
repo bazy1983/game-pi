@@ -32,7 +32,7 @@ from ..colors import OFF, PALETTE, RGB, GameColor, scale
 from ..effects.confetti import Confetti
 from ..effects.fireworks import Fireworks
 from ..effects.red_fill import RedFill
-from .base import Choice, Game, GameInfo, Setting
+from .base import SOUND_SETTING, Choice, Game, GameInfo, Setting
 
 PLAYER_COLORS = [
     GameColor("blue", (0, 0, 255), "#2a5cff"),
@@ -92,7 +92,8 @@ class Simon(Game):
                     Choice("turns", "Take turns", "Repeat it from memory, then add a color"),
                 ],
                 default="together",
-            )
+            ),
+            SOUND_SETTING,
         ],
         max_players=len(PLAYER_COLORS),
         player_colors=PLAYER_COLORS,
@@ -136,6 +137,7 @@ class Simon(Game):
         self.turn = 0
         self.entered = 0
         self.effect: Confetti | Fireworks | RedFill | None = None
+        self.sounded = -1  # the playback step whose note has played
 
     @property
     def solo(self) -> bool:
@@ -159,6 +161,10 @@ class Simon(Game):
                 self._next()
         elif self.stage == "show":
             self.timer += dt  # time since playback started
+            step = int(self.timer // self._period())
+            if step != self.sounded and step < len(self.sequence):
+                self.sounded = step
+                self._note(self.sequence[step])  # each color has its own note
             if self.timer >= len(self.sequence) * self._period():
                 self._start_input()
         elif self.stage == "input":
@@ -176,6 +182,7 @@ class Simon(Game):
         else:
             self.stage = "show"
             self.timer = 0.0
+            self.sounded = -1
 
     def _start_input(self) -> None:
         self.stage = "input"
@@ -206,9 +213,10 @@ class Simon(Game):
         if idx not in self.deadline:
             return  # out, not their turn, or already finished this round
 
-        if self.mode != "together":  # the strip shows presses unless others could copy them
+        if self.mode != "together":  # the strip (and the speaker) show presses unless others could copy them
             same = self.lit is not None and self.lit[0] == color and self.t - self.lit[1] < PRESS_TIME
             self.lit = (color, self.t, PRESS_BLINK if same else 0.0)
+            self._note(color)
 
         if self.mode == "turns":
             if self.entered == len(self.sequence):
@@ -231,12 +239,18 @@ class Simon(Game):
             self.done.add(idx)
             self._check_round()
 
+    def _note(self, color: int) -> None:
+        self.play(f"note{color + 1}")
+
     def _mistake(self, idx: int) -> None:
         self.deadline.pop(idx, None)
         if self.mode == "solo":
             self.status = "lost"
             self.effect = RedFill(self.num_leds)
-        elif self.mode == "turns":
+            self.play("lose")
+            return
+        self.play("out")
+        if self.mode == "turns":
             self.alive.discard(idx)
             self.last = {"out": [idx]}
             self._after_turn()
@@ -256,6 +270,7 @@ class Simon(Game):
             # Everyone missed: nobody's out, same round with a new last color.
             self.sequence[-1] = self._random_color(avoid=self.sequence[-1])
             self.last = {"out": [], "replay": True}
+            self.play("round_lose")
             self._between()
             return
         self.alive -= missed
@@ -267,6 +282,7 @@ class Simon(Game):
             self._finish(sorted(self.alive))
         else:
             self.sequence.append(self._random_color())
+            self.play("round_win")
             self._between()
 
     # --- turns ----------------------------------------------------------------
@@ -277,6 +293,7 @@ class Simon(Game):
         if len(self.sequence) >= self.cfg.target:
             self._finish(sorted(self.alive))
         else:
+            self.play("round_win")
             self._after_turn()
 
     def _after_turn(self) -> None:
@@ -325,6 +342,7 @@ class Simon(Game):
         self.status = "won"
         self.winners = winners
         self.lit = None
+        self.play("win")
         if len(winners) == 1 and not self.solo:
             self.effect = Confetti(self.num_leds, self.pcolors[winners[0]].led, FINAL_TIME, self.rng)
         else:

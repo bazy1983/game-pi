@@ -22,7 +22,7 @@ from typing import Any
 
 from ..colors import OFF, RGB, WHITE, GameColor, scale
 from ..effects.confetti import Confetti
-from .base import Choice, Game, GameInfo
+from .base import SOUND_SETTING, Choice, Game, GameInfo
 
 PLAYER_COLORS = [
     GameColor("red", (255, 0, 0), "#ff2a2a"),  # bottom of the strip
@@ -66,6 +66,7 @@ class PingPong(Game):
             Choice("hard", "Hard", "Solo: the computer returns 93% of balls"),
         ],
         default_difficulty="easy",
+        settings=[SOUND_SETTING],
         max_players=len(PLAYER_COLORS),
         player_colors=PLAYER_COLORS,
     )
@@ -165,6 +166,7 @@ class PingPong(Game):
         self.dir = -1 if self.serve_to == 0 else 1
         self.hits = 0
         self._plan_cpu()
+        self.play("ready")
 
     def _hit(self, side: int, d: float) -> None:
         if d < 0:  # it got past between frames: bounce it back in
@@ -172,6 +174,9 @@ class PingPong(Game):
         self.dir = -self.dir
         self.hits += 1
         self._plan_cpu()
+        self.play("blip_low" if side == 0 else "blip_high")
+        if self.hits % SPEEDUP_EVERY == 0:
+            self.play("faster")
 
     def _point(self, scorer: int) -> None:
         self.scores[scorer] += 1
@@ -179,6 +184,10 @@ class PingPong(Game):
         if self.scores[scorer] >= WIN_SCORE:
             self._finish(scorer)
             return
+        if self.solo:
+            self.play("round_win" if scorer == 0 else "round_lose")
+        else:
+            self.play("point")
         self.stage = "serve"
         self.timer = SERVE_TIME
         self.serve_to = 1 - scorer
@@ -222,6 +231,7 @@ class PingPong(Game):
         self.winner = winner
         self.status = "lost" if self.solo and winner == 1 else "won"
         self.effect = Confetti(self.num_leds, PLAYER_COLORS[winner].led, FINAL_TIME, self.rng)
+        self.play("lose" if self.status == "lost" else "win")
 
     # --- output ---------------------------------------------------------------
 

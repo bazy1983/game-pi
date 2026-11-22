@@ -83,7 +83,7 @@ class PlaybackTest(unittest.TestCase):
     def test_the_word_repeats_on_easy(self):
         g = make()
         run(g, INTRO_TIME + g.play_time * 3 + 0.5)
-        self.assertEqual(g.play, 4)
+        self.assertEqual(g.playback, 4)
         self.assertEqual(g.status, "playing")
 
     def test_word_is_secret_until_the_end(self):
@@ -127,7 +127,7 @@ class GuessTest(unittest.TestCase):
     def test_hard_plays_three_times_then_a_last_chance(self):
         g = make(difficulty="hard")
         run(g, INTRO_TIME + g.play_time * 3 - 0.1)
-        self.assertEqual((g.stage, g.play), ("play", 3))
+        self.assertEqual((g.stage, g.playback), ("play", 3))
         run(g, 0.2)
         self.assertEqual(g.stage, "last")
         self.assertEqual(g.state()["last_chance"], 10)

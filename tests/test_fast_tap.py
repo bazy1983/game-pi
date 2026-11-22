@@ -15,10 +15,10 @@ class Clock:
         return self.t
 
 
-def make(players=2, difficulty="easy", seed=1):
+def make(players=2, difficulty="easy", seed=1, **settings):
     clock = Clock()
     ids = [f"p{i}" for i in range(players)]
-    g = FastTap(60, difficulty, {}, players=ids, rng=random.Random(seed), clock=clock)
+    g = FastTap(60, difficulty, settings, players=ids, rng=random.Random(seed), clock=clock)
     return g, clock
 
 
@@ -236,6 +236,67 @@ class FastTapTest(unittest.TestCase):
     def test_players_never_get_signal_colors(self):
         for c in PLAYER_COLORS:
             self.assertNotIn(c.led, (RED, GREEN))
+
+
+
+class SoundTest(unittest.TestCase):
+    """Sounds go with the rounds; the engine plays them (see test_engine)."""
+
+    def sounds(self, g):
+        heard, g.sounds[:] = list(g.sounds), []
+        return heard
+
+    def test_a_round_starts_with_ready(self):
+        g, clock = make(2, sound="retro")
+        self.assertEqual(self.sounds(g), ["retro/ready"])
+
+    def test_flashes_are_silent(self):
+        g, clock = make(2, sound="modern")
+        self.sounds(g)
+        run_until(g, clock, lambda: g.light == GREEN)
+        self.assertEqual(self.sounds(g), [])
+
+    def test_out_then_round_win(self):
+        g, clock = make(3, sound="modern")
+        self.sounds(g)
+        run_until(g, clock, lambda: g.stage == "armed")
+        tap(g, 2)
+        self.assertEqual(self.sounds(g), ["modern/out"])
+        win_round(g, clock, 0)
+        self.assertEqual(self.sounds(g), ["modern/round_win"])
+        next_round(g, clock)
+        self.assertEqual(self.sounds(g), ["modern/ready"])
+
+    def test_everyone_out_is_round_lose_without_out(self):
+        g, clock = make(2, sound="modern")
+        self.sounds(g)
+        lose_round(g, clock)
+        self.assertEqual(self.sounds(g), ["modern/out", "modern/round_lose"])
+
+    def test_sudden_death_and_win(self):
+        g, clock = make(3, sound="retro")
+        win_round(g, clock, 0)
+        next_round(g, clock)
+        win_round(g, clock, 1)
+        next_round(g, clock)
+        lose_round(g, clock)
+        next_round(g, clock)
+        self.assertEqual(self.sounds(g)[-1], "retro/sudden")
+        win_round(g, clock, 1)
+        self.assertEqual(self.sounds(g), ["retro/win"])
+
+    def test_solo_loss(self):
+        g, clock = make(1, sound="modern")
+        lose_round(g, clock)
+        next_round(g, clock)
+        self.sounds(g)
+        lose_round(g, clock)
+        self.assertEqual(self.sounds(g), ["modern/lose"])
+
+    def test_no_sound_setting_is_silent(self):
+        g, clock = make(2)
+        win_round(g, clock, 0)
+        self.assertEqual(g.sounds, [])
 
 
 if __name__ == "__main__":

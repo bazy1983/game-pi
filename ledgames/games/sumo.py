@@ -16,7 +16,7 @@ from typing import Any
 
 from ..colors import OFF, RGB, GameColor
 from ..effects.confetti import Confetti
-from .base import Choice, Game, GameInfo
+from .base import SOUND_SETTING, Choice, Game, GameInfo
 
 PLAYER_COLORS = [
     GameColor("red", (255, 0, 0), "#ff2a2a"),  # bottom of the strip
@@ -43,6 +43,7 @@ class Sumo(Game):
             Choice("hard", "Hard", "Solo: the computer taps 7 times a second · 2 players: tap buttons 1, 2, 3 in turn"),
         ],
         default_difficulty="easy",
+        settings=[SOUND_SETTING],
         max_players=len(PLAYER_COLORS),
         player_colors=PLAYER_COLORS,
     )
@@ -73,6 +74,7 @@ class Sumo(Game):
         self.winner: int | None = None
         self.forfeit = False
         self.effect: Confetti | None = None
+        self.play("count")  # 3…
 
     @property
     def solo(self) -> bool:
@@ -90,6 +92,7 @@ class Sumo(Game):
             return
         if not self.started:
             self.countdown -= dt
+            self.count_down(self.countdown + dt, self.countdown)
             return
         if self.solo:
             self.cpu_timer -= dt
@@ -118,6 +121,8 @@ class Sumo(Game):
             self.lights = [0, 0]
             self.lights[side] = self.num_leds
             self._finish(side)
+        else:
+            self.play("blip_low" if side == 0 else "blip_high")  # red pushes from the bottom
 
     def on_leave(self, player: str) -> None:
         if self.status == "playing" and player in self.players and not self.solo:
@@ -128,6 +133,7 @@ class Sumo(Game):
         self.winner = winner
         self.status = "lost" if self.solo and winner == 1 else "won"
         self.effect = Confetti(self.num_leds, PLAYER_COLORS[winner].led, FINAL_TIME, self.rng)
+        self.play("lose" if self.status == "lost" else "win")
 
     # --- output ---------------------------------------------------------------
 

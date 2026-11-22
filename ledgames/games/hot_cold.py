@@ -23,7 +23,7 @@ from ..colors import OFF, RGB, WHITE, GameColor, scale
 from ..effects.confetti import Confetti
 from ..effects.fireworks import Fireworks
 from ..effects.red_fill import RedFill
-from .base import Choice, Game, GameInfo
+from .base import SOUND_SETTING, Choice, Game, GameInfo
 
 # Not used on the strip during play (that's the heat colors and the white cursor).
 PLAYER_COLORS = [
@@ -96,6 +96,7 @@ class HotCold(Game):
             Choice("hard", "Hard", "A tiny treasure · alone: 6 digs"),
         ],
         default_difficulty="easy",
+        settings=[SOUND_SETTING],
         max_players=len(PLAYER_COLORS),
         player_colors=PLAYER_COLORS,
     )
@@ -158,6 +159,7 @@ class HotCold(Game):
             else:
                 self._start_turn(self._next(self.turn))
         elif self.stage == "turn":  # out of time: the turn passes
+            self.play("out")
             self._start_turn(self._next(self.turn))
         elif self.stage == "reveal":
             self._finish()
@@ -171,6 +173,7 @@ class HotCold(Game):
         return idx
 
     def _start_turn(self, idx: int) -> None:
+        self.play("ready")
         self.stage, self.turn = "turn", idx
         self.timer = self.cfg.turn_time
 
@@ -189,12 +192,16 @@ class HotCold(Game):
 
     def _dig(self, led: int) -> None:
         distance = abs(led - self.treasure)
+        self.play("dig")
         if distance <= self.zone:
             self.digs.append((led, FOUND, self.turn))
             self.winner = self.turn
+            self.play("treasure")
             self._reveal("won")
             return
-        self.digs.append((led, heat_of(distance, self.num_leds), self.turn))
+        heat = heat_of(distance, self.num_leds)
+        self.play(f"heat_{heat.id}")  # higher and busier the hotter, like the colors
+        self.digs.append((led, heat, self.turn))
         self.stage, self.timer = "glow", GLOW_TIME
 
     def _reveal(self, status: str) -> None:
@@ -202,6 +209,7 @@ class HotCold(Game):
         self.stage, self.timer = "reveal", REVEAL_TIME
 
     def _finish(self) -> None:
+        self.play("lose" if self.status == "lost" else "win")
         if self.status == "lost":
             self.effect = RedFill(self.num_leds)
         elif self.solo:

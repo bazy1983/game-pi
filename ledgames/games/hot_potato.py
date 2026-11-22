@@ -29,7 +29,7 @@ from ..colors import OFF, RGB, WHITE, GameColor, scale
 from ..effects.confetti import Confetti
 from ..effects.fireworks import Fireworks
 from ..effects.red_fill import RedFill
-from .base import Choice, Game, GameInfo, Setting
+from .base import SOUND_SETTING, Choice, Game, GameInfo, Setting
 
 # No red or orange: those are the potato and the explosion. Yellow last.
 PLAYER_COLORS = [
@@ -52,6 +52,7 @@ MAX_TAP_AGE = 0.3
 JUDGE_DELAY = 0.3  # wait for late throws before deciding who's out
 FINAL_TIME = 6.0
 
+FUSE_TICK = (0.8, 0.15)  # s between the fuse's ticks: cold, about to blow
 
 @dataclass(frozen=True)
 class Difficulty:
@@ -90,7 +91,8 @@ class HotPotato(Game):
                     Choice("5", "5 computers"),
                 ],
                 default="3",
-            )
+            ),
+            SOUND_SETTING,
         ],
         max_players=len(PLAYER_COLORS),
         player_colors=PLAYER_COLORS,
@@ -132,6 +134,8 @@ class HotPotato(Game):
         self.victim: int | None = None
         self.winner: int | None = None
         self.effect: Confetti | Fireworks | RedFill | None = None
+        self.tick_at = math.inf  # the fuse's next tick
+        self.play("count")  # 3…
 
     def _cpu(self, i: int) -> bool:
         return i >= self.humans
@@ -170,10 +174,12 @@ class HotPotato(Game):
         self.heat_fuse = DROP_TIME + fuse * self.rng.uniform(1 - self.cfg.lie, 1 + self.cfg.lie)
         self.stage, self.until = "drop", self.t + DROP_TIME
         self.victim = None
+        self.tick_at = self.t
         holder = self.rng.choice(self.zones)
         self._fly(holder, self.num_leds - 1, self.t, DROP_TIME)
 
     def _fly(self, to: int, start_led: float, when: float, duration: float) -> None:
+        self.play("throw")
         self.holder = to
         self.flight = (start_led, self._center(to), when, when + duration)
         self.ready_at = when + duration + self.cfg.catch
@@ -201,7 +207,9 @@ class HotPotato(Game):
             return
         if self.flight and self.t >= self.flight[3]:
             self.flight = None  # landed
+            self.play("catch")
         if self.stage == "countdown":
+            self.count_down(self.until - self.t + dt, self.until - self.t)
             if self.t >= self.until:
                 self._new_round()
         elif self.stage == "drop":
@@ -212,12 +220,18 @@ class HotPotato(Game):
                 self._throw(self.cpu_throw)
             if self.t >= self.boom_at:
                 self.stage = "judging"
+        if self.stage in ("drop", "play", "judging") and self.t >= self.tick_at:
+            # The fuse ticks faster as the potato heats up. It follows the
+            # heat the strip shows, so it's no better a hint than the colors.
+            self.play("tick")
+            self.tick_at = self.t + FUSE_TICK[0] - (FUSE_TICK[0] - FUSE_TICK[1]) * self.heat
         if self.stage == "judging" and self.t >= self.boom_at + JUDGE_DELAY:
             self._boom()
         elif self.stage == "boom" and self.t >= self.until:
             self._after_boom()
 
     def _boom(self) -> None:
+        self.play("boom")
         self.stage, self.until = "boom", self.t + BOOM_TIME
         self.victim = self.holder
         self.out.append(self.holder)
@@ -259,6 +273,7 @@ class HotPotato(Game):
         self.winner = winner
         won = winner is not None and not self._cpu(winner)
         self.status = "won" if won else "lost"
+        self.play("win" if won else "lose")
         if not won:
             self.effect = RedFill(self.num_leds)
         elif self.humans == 1:

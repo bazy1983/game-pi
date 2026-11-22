@@ -28,7 +28,7 @@ from ..colors import OFF, RGB, GameColor, scale
 from ..effects.confetti import Confetti
 from ..effects.fireworks import Fireworks
 from ..effects.red_fill import RedFill
-from .base import Choice, Game, GameInfo, Setting
+from .base import SOUND_SETTING, Choice, Game, GameInfo, Setting
 
 # No red or green (the light), yellow last (the warning).
 PLAYER_COLORS = [
@@ -95,7 +95,8 @@ class RedLight(Game):
                     Choice("clock", "Beat the clock", "Reach the top in time"),
                 ],
                 default="computer",
-            )
+            ),
+            SOUND_SETTING,
         ],
         max_players=len(PLAYER_COLORS),
         player_colors=PLAYER_COLORS,
@@ -140,6 +141,8 @@ class RedLight(Game):
         self.winner: int | None = None
         self.finish_time: float | None = None
         self.effect: Confetti | Fireworks | RedFill | None = None
+        self.heard = self.light  # the light the speaker last called (it follows what's shown)
+        self.play("count")  # 3…
 
     # --- lights ---------------------------------------------------------------
 
@@ -213,12 +216,15 @@ class RedLight(Game):
             self.finished = self.effect.done
             return
         if self.stage == "countdown":
+            self.count_down(self.until - self.t + dt, self.until - self.t, go=None)  # green calls "go"
             if self.t >= self.until:
                 self.stage = "race"
                 self._set_light("green")
+                self._call_light()
             return
         if self.t >= self.until:
             self._next_light()
+        self._call_light()
         self._cpu_update()
 
         rate = 1 / CLIMB_TIME
@@ -261,9 +267,17 @@ class RedLight(Game):
         elif self.judged and self.light == "red" and self.stage == "race":
             self._catch(i)  # started moving during red
 
+    def _call_light(self) -> None:
+        """A sound whenever the light players see changes, fake-outs too:
+        the speaker mustn't tell a fake red from a real one."""
+        if self.shown != self.heard:
+            self.heard = self.shown
+            self.play(f"light_{self.shown}")
+
     def _catch(self, i: int) -> None:
         if self.stunned[i] or i in self.left:
             return
+        self.play("slide")
         self.stunned[i] = True
         self.caught[i] += 1
         self.slide[i] = (self.pos[i], self.t)
@@ -282,6 +296,7 @@ class RedLight(Game):
 
     def _end(self, won: bool) -> None:
         self.status = "won" if won else "lost"
+        self.play("win" if won else "lose")
         self.holding = [False] * len(self.pos)
         if not won:
             self.effect = RedFill(self.num_leds)

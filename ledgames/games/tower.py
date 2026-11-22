@@ -25,7 +25,7 @@ from typing import Any
 from ..colors import OFF, RED, RGB, WHITE, GameColor, scale
 from ..effects.confetti import Confetti
 from ..effects.fireworks import Fireworks
-from .base import Choice, Game, GameInfo, Setting
+from .base import SOUND_SETTING, Choice, Game, GameInfo, Setting
 
 # No red or white: those are the cuts and the sliding block.
 PLAYER_COLORS = [
@@ -108,7 +108,8 @@ class Tower(Game):
                     Choice("height", "Tallest tower wins", "Keep your blocks big to build high"),
                 ],
                 default="blocks",
-            )
+            ),
+            SOUND_SETTING,
         ],
         max_players=len(PLAYER_COLORS),
         player_colors=PLAYER_COLORS,
@@ -158,6 +159,7 @@ class Tower(Game):
         self.cut: list[int] = []  # LEDs of the piece just cut off
         self.missed: list[int] = []
         self.stage, self.timer = "intro", COUNTDOWN
+        self.play("ready")
 
     def _spawn(self) -> None:
         self.stage = "moving"
@@ -192,6 +194,7 @@ class Tower(Game):
                 self._finish()
             else:
                 self.stage, self.timer = "crumble", CRUMBLE_TIME
+                self.play("crumble")
         elif self.stage == "crumble":
             nxt = self._next_turn()
             if nxt is None:
@@ -225,6 +228,7 @@ class Tower(Game):
             self.missed = [i for i in range(p, p + length) if 0 <= i < self.num_leds]
             self._end_turn(topped=False)
             self.stage, self.timer = "fall", FALL_TIME
+            self.play("fall")
             return
         new_len = length - cut
         grew = False
@@ -246,9 +250,13 @@ class Tower(Game):
         self.length = new_len
         self.speed = min(self.speed * self.cfg.speedup, self.cfg.speed * self.num_leds * MAX_SPEEDUP)
         score.blocks, score.height = len(self.layers) - 1, self.top
+        self.play("perfect" if cut == 0 else "chop")
+        if grew:
+            self.play("grew")
         if self.top + self.length > self.num_leds:  # no room for another block
             self._end_turn(topped=True)
             self.stage, self.timer = "topped", TOP_TIME
+            self.play("round_win")
         else:
             self.stage, self.timer = "cut", CUT_TIME
 
@@ -270,6 +278,7 @@ class Tower(Game):
         if self.solo:
             topped = self.scores[0].topped
             self.status = "won" if topped else "lost"
+            self.play("win" if topped else "lose")
             self.winners = [0] if topped else []
             if topped:
                 self.effect = Fireworks(self.num_leds, rng=self.rng)
@@ -277,6 +286,7 @@ class Tower(Game):
                 self.stage = "over"  # the tower already crumbled away
             return
         self.status = "won"
+        self.play("win")
         here = [i for i, s in enumerate(self.scores) if not s.left]
         best = max((self._rank(i) for i in here), default=(0, 0))
         self.winners = [i for i in here if self._rank(i) == best]

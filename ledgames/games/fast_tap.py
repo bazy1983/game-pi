@@ -19,7 +19,7 @@ from ..colors import OFF, RED, RGB, GameColor
 from ..effects.confetti import Confetti
 from ..effects.lineup import draw_lineup
 from ..effects.red_fill import RedFill
-from .base import Choice, Game, GameInfo
+from .base import SOUND_SETTING, Choice, Game, GameInfo
 
 GREEN: RGB = (0, 255, 0)
 
@@ -70,6 +70,7 @@ class FastTap(Game):
             Choice("hard", "Hard", "Fake flashes in other colors · green lasts 0.3s"),
         ],
         default_difficulty="easy",
+        settings=[SOUND_SETTING],
         max_players=len(PLAYER_COLORS),
         player_colors=PLAYER_COLORS,
     )
@@ -120,6 +121,9 @@ class FastTap(Game):
         self.green_taps: dict[int, float] = {}  # valid taps in that window
         self.green_decided = True
         self.effect: Confetti | RedFill | None = None
+        # Sounds go with the rounds, never with the flashes: a sound would
+        # tell players when to look (and which flash is green).
+        self.play("sudden" if self.tiebreak else "ready")
 
     def update(self, dt: float) -> None:
         self.t += dt
@@ -198,6 +202,8 @@ class FastTap(Game):
         self.out.add(idx)
         if self.active <= self.out:
             self._round_lost()
+        else:
+            self.play("out")
 
     def on_leave(self, player: str) -> None:
         if player not in self.players:
@@ -227,14 +233,14 @@ class FastTap(Game):
         at = self.green_taps.get(idx, at)
         self.wins[idx] += 1
         self.last_round = {"winner": idx, "reaction_ms": round((at - self.green[0]) * 1000)}
-        self._end_round(Confetti(self.num_leds, self.colors[idx].led, ROUND_OVER_TIME, self.rng))
+        self._end_round(Confetti(self.num_leds, self.colors[idx].led, ROUND_OVER_TIME, self.rng), "round_win")
 
     def _round_lost(self) -> None:
         self.losses += 1
         self.last_round = {"winner": None, "reaction_ms": None}
-        self._end_round(RedFill(self.num_leds, fill_time=0.5, hold_time=1.5))
+        self._end_round(RedFill(self.num_leds, fill_time=0.5, hold_time=1.5), "round_lose")
 
-    def _end_round(self, effect: Confetti | RedFill) -> None:
+    def _end_round(self, effect: Confetti | RedFill, sound: str) -> None:
         self.rounds_played += 1
         self.light = None
         result = self._game_result()
@@ -242,9 +248,11 @@ class FastTap(Game):
             self.stage = "round_over"
             self.stage_timer = ROUND_OVER_TIME
             self.effect = effect
+            self.play(sound)
         elif result == "lost":
             self.status = "lost"
             self.effect = RedFill(self.num_leds)
+            self.play("lose")
         else:
             self._finish(result)
 
@@ -252,6 +260,7 @@ class FastTap(Game):
         self.status = "won"
         self.winner = winner
         self.light = None
+        self.play("win")
         self.effect = Confetti(self.num_leds, self.colors[winner].led, FINAL_TIME, self.rng)
 
     def _game_result(self) -> int | str | None:

@@ -1,5 +1,6 @@
 """The interface every game implements so the engine and web UI can run it."""
 
+import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -88,6 +89,16 @@ class Game:
         pack = self.settings.get("sound")
         if pack in PACKS:
             self.sounds.append(f"{pack}/{name}")
+
+    def count_down(self, before: float, now: float, go: str | None = "go") -> None:
+        """Countdown beeps, from the seconds left before and after a frame:
+        "count" as each whole second starts, `go` when it runs out. (Play
+        "count" once when the countdown starts, for its first second.)"""
+        if now <= 0 < before:
+            if go:
+                self.play(go)
+        elif 0 < now and math.ceil(now) < math.ceil(before):
+            self.play("count")
 
     def update(self, dt: float) -> None:
         raise NotImplementedError
