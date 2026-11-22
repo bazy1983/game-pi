@@ -18,8 +18,12 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-RATE = 16_000
+# The speaker keeps the sound card at 48 kHz, and the mic shares its clock
+# (see speaker.py). Loudness only needs every third sample (16 kHz), which
+# keeps the Pi's work the same as recording at 16 kHz.
+RATE = 48_000
 CHUNK = RATE // 50  # frames per reading: 20 ms
+STEP = 3
 FRAME = 8  # bytes per frame: 2 channels of 32 bits (the INMP441 is on the left)
 SETTLE = 0.3  # s: the mic's first moments after it starts are noise
 RETRY = 5.0  # s between tries when arecord fails
@@ -109,7 +113,7 @@ class Microphone:
                 samples = array("i")
                 samples.frombytes(await proc.stdout.readexactly(CHUNK * FRAME))
                 loudness.min_range = sensitivity_range(self.sensitivity)
-                level = loudness.feed(samples[0::2], dt)
+                level = loudness.feed(samples[0 :: 2 * STEP], dt)  # left channel, every STEP-th
                 if settle:
                     settle -= 1
                 else:

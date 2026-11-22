@@ -34,6 +34,8 @@ HTTP (JSON):
   POST /api/device/pattern     {"pattern": "red" | "green" | "first" | "check" | null}:
                                the guided wiring check's patterns (effects/wiring.py)
   POST /api/device/mic         microphone sensitivity, 0–1: {sensitivity}
+  POST /api/device/speaker     {"on": bool, "volume": 0–1} (either; saved)
+  POST /api/device/speaker/test  play the test sound
   GET  /api/lights             ambient lights settings, effects and palettes
   POST /api/lights             change some of those settings (see lights.py)
   GET  /api/invite             {"url", "host_url"}: link other phones can open
@@ -101,6 +103,7 @@ class Server:
         self.wireless_stats = Path("/proc/net/wireless")  # the Wi-Fi signal (tests point it elsewhere)
         self._save_lights: asyncio.TimerHandle | None = None
         self._save_mic: asyncio.TimerHandle | None = None
+        self._save_speaker: asyncio.TimerHandle | None = None
         self.clients: dict[web.WebSocketResponse, str] = {}  # socket → client id
         self.away: dict[str, asyncio.Task] = {}  # client id → pending abandon
         self.last_players: list[str] = []  # for "Play again"
@@ -319,6 +322,7 @@ class Server:
                 "max_skip": MAX_SKIP,
                 "color_order": self.engine.strip.order,
                 "mic": self.mic_state(),
+                "speaker": self.speaker_state(),
                 "wifi": {k: v for k, v in self.wifi.state().items() if k != "networks"} if self.wifi else None,
                 "signal": self.signal(),
                 "update": self.updater.state() if self.updater else {"version": __version__, "status": "off"},
@@ -449,6 +453,42 @@ class Server:
         settings["mic_sensitivity"] = self.engine.lights.mic.sensitivity
         save_settings(settings, self.state_dir)
 
+    def speaker_state(self) -> dict | None:
+        speaker = self.engine.speaker
+        return {"available": speaker.available, **speaker.settings()} if speaker else None
+
+    async def device_speaker(self, request: web.Request) -> web.Response:
+        body = await _json_body(request)
+        speaker = self.engine.speaker
+        if speaker is None:
+            return web.json_response({"error": "The speaker is turned off."}, status=409)
+        error = speaker.update({k: v for k, v in body.items() if k in ("on", "volume")})
+        if error:
+            return web.json_response({"error": error}, status=400)
+        if self.state_dir:
+            # The slider sends a stream of changes; write the card once they stop.
+            if self._save_speaker:
+                self._save_speaker.cancel()
+            self._save_speaker = asyncio.get_running_loop().call_later(2, self.save_speaker)
+        return web.json_response({"error": None, "speaker": self.speaker_state()})
+
+    def save_speaker(self) -> None:
+        if self._save_speaker:
+            self._save_speaker.cancel()
+            self._save_speaker = None
+        self.save_settings(speaker=self.engine.speaker.settings())
+
+    async def device_speaker_test(self, request: web.Request) -> web.Response:
+        await _json_body(request)
+        speaker = self.engine.speaker
+        if not (speaker and speaker.available):
+            return web.json_response({"error": "No speaker found."}, status=409)
+        if not speaker.on:
+            return web.json_response({"error": "The sound is off."}, status=409)
+        if not speaker.play("chime"):
+            return web.json_response({"error": "The speaker is still starting. Try again in a few seconds."}, status=409)
+        return web.json_response({"error": None})
+
     async def device_test_leds(self, request: web.Request) -> web.Response:
         await _json_body(request)
         error = self.engine.test_strip()
@@ -572,12 +612,18 @@ def build_app(
         mic = engine.lights.mic
         if mic and mic.available:
             app["tasks"].append(asyncio.create_task(mic.run(lambda: engine.lights.listening)))
+        if engine.speaker:
+            app["tasks"].append(asyncio.create_task(engine.speaker.start()))
 
     async def shutdown(app):
         if server._save_lights:
             server.save_lights()
         if server._save_mic:
             server.save_mic()
+        if server._save_speaker:
+            server.save_speaker()
+        if engine.speaker:
+            engine.speaker.close()
         for task in app["tasks"]:
             task.cancel()
         for ws in set(app["sockets"]):
@@ -599,6 +645,8 @@ def build_app(
     app.router.add_post("/api/device/pattern", server.device_pattern)
     app.router.add_post("/api/device/test-leds", server.device_test_leds)
     app.router.add_post("/api/device/mic", server.device_mic)
+    app.router.add_post("/api/device/speaker", server.device_speaker)
+    app.router.add_post("/api/device/speaker/test", server.device_speaker_test)
     app.router.add_get("/api/lights", server.lights_get)
     app.router.add_post("/api/lights", server.lights_post)
     app.router.add_get("/api/invite", server.invite)

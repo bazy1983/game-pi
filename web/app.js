@@ -1579,6 +1579,8 @@ function renderDevice(d) {
     const s = $("mic-sensitivity");
     if (document.activeElement !== s && !micTimer) s.value = d.mic.sensitivity;
   }
+  $("speaker-section").classList.toggle("hidden", !d.speaker);
+  if (d.speaker) renderSpeaker(d.speaker);
   $("wifi-setup-btn").classList.toggle("hidden", !d.wifi);
   $("wifi-setup-btn").onclick = async () => {
     const msg = `${d.name} will leave this network. Then join the Wi-Fi network “${d.wifi.hotspot}” `
@@ -2068,5 +2070,44 @@ function sendMic() {
   }, 120);
 }
 $("mic-sensitivity").oninput = sendMic;
+
+// --- speaker -------------------------------------------------------------------------
+
+let speaker = null;      // {available, on, volume}, from /api/device
+let speakerTimer = null;
+
+function renderSpeaker(sp) {
+  speaker = sp;
+  $("speaker-text").textContent = !sp.available
+    ? "No speaker found. Check its wiring, then restart the unit."
+    : sp.on ? "Sound for games and music, from the speaker on the unit." : "The sound is off.";
+  $("speaker-controls").classList.toggle("hidden", !sp.available);
+  $("speaker-power").textContent = sp.on ? "Turn sound off" : "Turn sound on";
+  for (const id of ["speaker-volume", "speaker-test"]) $(id).disabled = !sp.on;
+  const v = $("speaker-volume");
+  if (document.activeElement !== v && !speakerTimer) v.value = sp.volume; // don't move it under the finger
+}
+
+$("speaker-power").onclick = async () => {
+  const res = await postJSON("/api/device/speaker", { on: !speaker.on });
+  if (res.error === null) renderSpeaker(res.speaker);
+};
+
+// The slider sends at most ~8 changes a second, and plays the test sound
+// when it's let go, so you hear the new volume.
+function sendVolume(test = false) {
+  clearTimeout(speakerTimer);
+  speakerTimer = setTimeout(async () => {
+    const res = await postJSON("/api/device/speaker", { volume: Number($("speaker-volume").value) });
+    speakerTimer = null;
+    if (res.error === null) {
+      renderSpeaker(res.speaker);
+      if (test) postJSON("/api/device/speaker/test");
+    }
+  }, 120);
+}
+$("speaker-volume").oninput = () => sendVolume();
+$("speaker-volume").onchange = () => sendVolume(true);
+$("speaker-test").onclick = () => postJSON("/api/device/speaker/test");
 
 connect();

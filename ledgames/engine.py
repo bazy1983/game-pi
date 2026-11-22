@@ -56,6 +56,7 @@ class Engine:
         self._test: float | None = None  # how far the strip test is
         self._pattern: tuple[str, float] | None = None  # wiring check pattern, time left
         self.lights = Lights(kind=self.layout.kind)  # ambient effect while no game is running
+        self.speaker = None  # a speaker.Speaker, if the unit has one
         self._last_state: dict[str, Any] | None = None
         self._t = 0.0
         self._shown = 0.0  # when the last frame started going to the strip (for the trace)

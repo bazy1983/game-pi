@@ -262,6 +262,7 @@ Every option can be passed as a flag or an environment variable.
 | `--max-ma` | `LED_MAX_MA` | 0 | current budget in mA; frames are dimmed to stay under it (0 = off) |
 | `--port` | `PORT` | 8080 | |
 | `--wifi` | `WIFI` | `off` | Wi-Fi setup hotspot: `nm` (NetworkManager plus hostapd, on the Pi), `fake` (simulator), `off` |
+| `--speaker` | `SPEAKER` | `auto` | speaker: `auto` (the first sound card that can play, other than HDMI), an ALSA device, or `off` |
 | `--mic` | `MIC` | `auto` | microphone for Sound level: `auto` (the first that can record), an ALSA device, or `off` |
 | `--updates` | `UPDATES` | `auto` | over-the-air updates: `auto`, `manual` (device page button) or `off` |
 | | `UPDATE_URL` | GitHub | where to look for releases (for testing) |
@@ -291,6 +292,23 @@ The INMP441 I2S microphone (for sound-reactive lights):
 
 Keep its wires short (under ~15 cm). The installer turns on I2S in
 `/boot/firmware/config.txt`; reboot once afterwards.
+
+The speaker: a MAX98357A I2S amplifier with a 4–8 Ω, 3 W speaker. It uses
+the same I2S sound card as the microphone, and shares its clock pins:
+
+| MAX98357A | Pi header pin |
+|---|---|
+| VIN | 2 or 4 (5 V) |
+| GND | 6 |
+| BCLK | 12 (GPIO18, with the mic's SCK) |
+| LRC | 35 (GPIO19, with the mic's WS) |
+| DIN | 40 (GPIO21) |
+| GAIN, SD | not connected |
+
+The speaker goes on the amplifier's screw terminal; neither of its wires is
+ground. A 100–470 µF capacitor across VIN and GND at the amplifier keeps
+the LEDs' current from buzzing in the speaker. Test it on the Pi with
+`speaker-test -D plughw:1,0 -c 2 -t sine -f 440 -l 1`.
 
 - Power the strip from its own 5 V supply, **not** from the Pi. 250–300 LEDs can
   draw up to 15–18 A at full white; a 10 A supply plus `LED_MAX_MA` and
@@ -380,6 +398,19 @@ of them change during a game.
 
 The simulator shows a grid too (its LEDs are GRB, so a wrong color order
 shows there as well).
+
+### Speaker
+
+Device settings → Speaker turns the sound on or off and sets the volume
+(the sound card has no volume of its own, so sounds are scaled before they
+play). Letting go of the volume slider, or **Play a test sound**, plays a
+chime.
+
+Sounds play through pygame's mixer (from apt: `python3-pygame`), which keeps
+the sound card open and plays silence between sounds: the amplifier knocks
+whenever the sound card starts or stops. The card runs at 48 kHz the whole
+time, so the microphone records at 48 kHz too (they share a clock). Loading
+pygame takes ~8 s on a Pi Zero; sounds play once it's done.
 
 ### Updates
 

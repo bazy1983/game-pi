@@ -11,6 +11,7 @@ from .engine import Engine
 from .layout import Layout, from_settings
 from .leds import MAX_LEDS, ORDERS, make_strip
 from .server import build_app
+from .speaker import Speaker
 from .updater import RELEASE_DIR, RELEASES_URL, Updater, install_root, load_public_key
 from .wifi import Wifi
 
@@ -53,6 +54,11 @@ def main() -> None:
         default=env("MIC", "auto"),
         help="microphone for the sound effects: auto (the first that can record), an ALSA device, or off",
     )
+    p.add_argument(
+        "--speaker",
+        default=env("SPEAKER", "auto"),
+        help="speaker: auto (the first sound card that can play, other than HDMI), an ALSA device, or off",
+    )
     args = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("aiohttp.access").setLevel(logging.WARNING)  # phones poll; don't log every request
@@ -76,6 +82,10 @@ def main() -> None:
         saved = saved_settings.get("mic_sensitivity")
         if isinstance(saved, (int, float)) and not isinstance(saved, bool) and 0 <= saved <= 1:
             engine.lights.mic.sensitivity = float(saved)
+
+    if args.speaker != "off":
+        engine.speaker = Speaker(args.speaker)
+        engine.speaker.update(saved_settings.get("speaker", {}) if isinstance(saved_settings.get("speaker"), dict) else {})
 
     device = wifi = None
     if args.wifi != "off":

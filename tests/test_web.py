@@ -9,6 +9,7 @@ from ledgames.device import Device, load_settings
 from ledgames.engine import Engine
 from ledgames.leds import make_strip
 from ledgames.server import build_app
+from ledgames.speaker import Speaker
 from ledgames.wifi import Network, Wifi
 from ledgames.wifi_fake import FakeHotspot, FakeNmcli
 
@@ -240,6 +241,43 @@ class WebTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(self.engine.lights.on)
             self.client.app["server"].save_lights()  # normally 2 s after the last change
             self.assertEqual(load_settings(Path(tmp))["lights"]["effect"], "fire")
+
+    async def test_speaker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            await self.start(state_dir=Path(tmp))
+            self.assertIsNone((await (await self.client.get("/api/device")).json())["speaker"])
+            r = await self.client.post("/api/device/speaker", json={"volume": 0.5})
+            self.assertEqual(r.status, 409)  # turned off
+
+            speaker = self.engine.speaker = Speaker(device="plughw:1,0")
+            played = []
+            r = await self.client.post("/api/device/speaker/test", json={})
+            self.assertEqual(r.status, 409)  # still starting
+            speaker.mixer = type("Mixer", (), {"stop": lambda self: None, "quit": lambda self: None})()
+            speaker.play = lambda name: played.append((name, speaker.volume)) or True
+            body = await (await self.client.get("/api/device")).json()
+            self.assertEqual(body["speaker"], {"available": True, "on": True, "volume": 0.5})
+            for bad in ({"volume": 2}, {"on": "no"}):
+                r = await self.client.post("/api/device/speaker", json=bad)
+                self.assertEqual(r.status, 400, bad)
+            r = await self.client.post("/api/device/speaker", json={"volume": 0.8})
+            self.assertEqual((await r.json())["speaker"]["volume"], 0.8)
+            r = await self.client.post("/api/device/speaker/test", json={})
+            self.assertEqual(r.status, 200)
+            self.assertEqual(played, [("chime", 0.8)])
+            await self.client.post("/api/device/speaker", json={"on": False})
+            r = await self.client.post("/api/device/speaker/test", json={})
+            self.assertEqual(r.status, 409)
+            self.client.app["server"].save_speaker()  # normally 2 s after the last change
+            self.assertEqual(load_settings(Path(tmp))["speaker"], {"on": False, "volume": 0.8})
+
+    async def test_no_speaker_found(self):
+        await self.start()
+        self.engine.speaker = Speaker(device=None)
+        body = await (await self.client.get("/api/device")).json()
+        self.assertFalse(body["speaker"]["available"])
+        r = await self.client.post("/api/device/speaker/test", json={})
+        self.assertEqual(r.status, 409)
 
     async def test_mic_sensitivity(self):
         with tempfile.TemporaryDirectory() as tmp:

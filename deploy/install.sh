@@ -12,7 +12,7 @@ VERSION=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$SRC/ledgames/__init__.py")
 NAME=${RELEASE_NAME:-$VERSION}
 
 missing=""
-for pkg in python3-venv python3-aiohttp python3-qrcode python3-cryptography rsync hostapd dnsmasq-base; do
+for pkg in python3-venv python3-aiohttp python3-qrcode python3-cryptography python3-pygame rsync hostapd dnsmasq-base; do
   dpkg -s "$pkg" >/dev/null 2>&1 || missing="$missing $pkg"
 done
 [ -z "$missing" ] || apt-get install -y $missing
