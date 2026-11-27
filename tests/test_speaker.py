@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ledgames.sounds import PEAK, RATE, SOUNDS, chime, mix, retro, tone
 from ledgames import speaker as speaker_module
-from ledgames.speaker import Speaker, find_device, made_sounds, to_pcm, volume_level
+from ledgames.speaker import Speaker, find_device, made_sounds, stereo, to_pcm, volume_level
 
 PCM = """00-00: MAI PCM i2s-hifi-0 : MAI PCM i2s-hifi-0 : playback 1
 01-00: Google voiceHAT SoundCard HiFi voicehat-hifi-0 : Google voiceHAT SoundCard HiFi voicehat-hifi-0 : playback 1 : capture 1
@@ -25,7 +25,7 @@ class FindDeviceTest(unittest.TestCase):
             return find_device(Path(tmp) / "pcm", Path(tmp) / "cards")
 
     def test_skips_hdmi(self):
-        self.assertEqual(self.find(PCM, CARDS), "plughw:1,0")
+        self.assertEqual(self.find(PCM, CARDS), "dmix:CARD=sndrpigooglevoi,DEV=0")
 
     def test_only_hdmi(self):
         self.assertIsNone(self.find(PCM.splitlines()[0] + "\n", CARDS))
@@ -37,6 +37,9 @@ class FindDeviceTest(unittest.TestCase):
 class SoundTest(unittest.TestCase):
     def test_pcm_leaves_headroom(self):
         self.assertEqual(list(array("h", to_pcm([1.0, -1.0, 0.0]))), [29490, -29490, 0])
+
+    def test_stereo_doubles_each_sample(self):
+        self.assertEqual(list(array("h", stereo(array("h", [1, -2, 3]).tobytes()))), [1, 1, -2, -2, 3, 3])
 
     def test_volume_is_squared(self):
         self.assertEqual([volume_level(v) for v in (0, 0.5, 1)], [0, 0.25, 1])
@@ -109,6 +112,9 @@ class FakeMixer:
     def get_busy(self):
         return False
 
+    def get_init(self):
+        return (RATE, -16, 2)  # stereo, as dmix opens
+
     def set_num_channels(self, n):
         pass
 
@@ -131,7 +137,7 @@ class PlayTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(sp.play("chime"))
         self.assertTrue(sp.play("chime"))
         sound = sp._sounds["chime"]
-        self.assertEqual((sound.plays, sound.volume, sound.length), (2, 0.25, int(RATE * 0.9) * 2))
+        self.assertEqual((sound.plays, sound.volume, sound.length), (2, 0.25, int(RATE * 0.9) * 4))  # stereo 16-bit
         self.assertEqual(sound.stops, 2)  # the same sound starts over
         self.assertEqual(mixer.stops, 0)
         self.assertTrue(sp.play("retro/hit", alone=True))

@@ -443,7 +443,10 @@ chime.
 
 Sounds play through pygame's mixer (from apt: `python3-pygame`), which keeps
 the sound card open and plays silence between sounds: the amplifier knocks
-whenever the sound card starts or stops. The card runs at 48 kHz the whole
+whenever the sound card starts or stops. It plays through ALSA's dmix, which
+keeps the card running even when the Pi is too busy to keep the mixer fed
+(an underrun would otherwise stop the card, and knock). `dmesg` logs
+"Disabling audio amp" each time the card stops. The card runs at 48 kHz the whole
 time, so the microphone records at 48 kHz too (they share a clock). Loading
 pygame takes ~8 s on a Pi Zero; sounds play once it's done.
 

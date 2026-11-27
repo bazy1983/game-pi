@@ -6,6 +6,11 @@ on again when it starts, and each switch knocks in the speaker. So the
 mixer keeps the sound card open all the time, playing silence between
 sounds. It mixes in a thread of its own (in C), and decodes MP3s.
 
+It plays through ALSA's dmix, not straight to the card: if the Pi is too
+busy to keep the mixer fed (an "underrun"), the card itself would stop, and
+knock. dmix keeps the card running and fills the gap with silence instead.
+dmix is always stereo, so sounds are made stereo to match.
+
 The sound card runs at RATE the whole time; the microphone shares its clock,
 so it records at the same rate (see audio.py).
 
@@ -35,19 +40,21 @@ LOUDEST = 0.9  # of full scale, at volume 1: headroom so sounds that add up don'
 
 
 def find_device(pcm: Path = Path("/proc/asound/pcm"), cards: Path = Path("/proc/asound/cards")) -> str | None:
-    """The first sound card that can play, other than HDMI, as an ALSA device name."""
+    """The first sound card that can play, other than HDMI, as its ALSA dmix
+    device (dmix only knows cards by name)."""
     try:
         pcm_lines = pcm.read_text().splitlines()
         card_text = cards.read_text()
     except OSError:
         return None
-    # " 0 [vc4hdmi        ]: vc4-hdmi - vc4-hdmi"
-    hdmi = {int(n) for n, name in re.findall(r"^\s*(\d+) \[(\S+)\s*\]", card_text, re.M) if "hdmi" in name.lower()}
+    # " 1 [sndrpigooglevoi]: RPi-simple - snd_rpi_googlevoicehat_soundcar"
+    names = {int(n): name for n, name in re.findall(r"^\s*(\d+) \[(\S+)\s*\]", card_text, re.M)}
     for line in pcm_lines:  # "01-00: Google voiceHAT ... : playback 1 : capture 1"
         if "playback" in line:
-            card, dev = line.split(":")[0].split("-")
-            if int(card) not in hdmi:
-                return f"plughw:{int(card)},{int(dev)}"
+            card, dev = (int(x) for x in line.split(":")[0].split("-"))
+            name = names.get(card)
+            if name and "hdmi" not in name.lower():
+                return f"dmix:CARD={name},DEV={dev}"
     return None
 
 
@@ -55,6 +62,15 @@ def to_pcm(sound: list[float]) -> bytes:
     """16-bit samples, at full volume less LOUDEST's headroom."""
     gain = 32767 * LOUDEST
     return array("h", [int(s * gain) for s in sound]).tobytes()
+
+
+def stereo(pcm: bytes) -> bytes:
+    """Mono 16-bit samples as stereo: each one twice, left and right."""
+    mono = array("h", pcm)
+    both = array("h", bytes(len(pcm) * 2))
+    both[0::2] = mono
+    both[1::2] = mono
+    return both.tobytes()
 
 
 def volume_level(volume: float) -> float:
@@ -146,7 +162,10 @@ class Speaker:
 
     @staticmethod
     def _make(mixer, cache: Path | None) -> dict:
-        return {name: mixer.Sound(buffer=pcm) for name, pcm in made_sounds(cache).items()}
+        channels = mixer.get_init()[2]  # dmix opens in stereo, whatever's asked
+        return {
+            name: mixer.Sound(buffer=stereo(pcm) if channels == 2 else pcm) for name, pcm in made_sounds(cache).items()
+        }
 
     def play(self, name: str, alone: bool = False) -> bool:
         """Play one of SOUNDS, over whatever else is playing; the same sound
