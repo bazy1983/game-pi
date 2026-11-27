@@ -332,6 +332,18 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action
 .leds-row input:focus { outline: none; border-color: #eef1f6; }
 .leds-row .secondary { margin-top: 0; padding: 18px 24px; }
 
+/* Device page: what the microphone hears */
+.mic-graph { display: block; width: 100%; height: 160px; margin-top: 14px; border-radius: 12px; background: #161a23; }
+.mic-bands { display: block; width: 100%; height: 70px; border-radius: 12px; background: #161a23; }
+.mic-key { display: flex; gap: 16px; font-size: 13px; margin: 8px 0 10px; }
+.mic-key i { display: inline-block; width: 14px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.key-sound { background: #eef1f6; height: 3px !important; vertical-align: 3px !important; }
+.key-range { background: rgba(255, 176, 102, .35); }
+.mic-meter { height: 14px; border-radius: 7px; background: #161a23; overflow: hidden; }
+.mic-meter > div { height: 100%; width: 0; background: linear-gradient(90deg, #22dd44, #ffd21f, #ff2a2a); background-size: 100vw 100%; }
+#mic-now { margin: 8px 0 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+.mic-help { font-size: 13px; margin-top: 10px; }
+
 /* Device page: grid settings and color order */
 #layout-pick { margin-bottom: 12px; }
 #layout-pick .card:disabled { opacity: .4; }

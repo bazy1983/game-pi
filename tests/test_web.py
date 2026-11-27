@@ -1,7 +1,9 @@
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
 
+from aiohttp import WSMsgType
 from aiohttp.test_utils import TestClient, TestServer
 
 from ledgames.audio import Microphone
@@ -297,6 +299,22 @@ class WebTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.engine.lights.mic.sensitivity, 0.8)
             self.client.app["server"].save_mic()  # normally 2 s after the last change
             self.assertEqual(load_settings(Path(tmp))["mic_sensitivity"], 0.8)
+
+    async def test_watching_the_mic(self):
+        await self.start()
+        ws = await self.client.ws_connect("/ws/mic")  # no microphone: it just closes
+        self.assertEqual((await ws.receive()).type, WSMsgType.CLOSE)
+
+        mic = self.engine.lights.mic = Microphone("plughw:9,0")
+        ws = await self.client.ws_connect("/ws/mic")
+        self.assertEqual(await ws.receive_json(), {"listening": False, "lights": False})
+        self.assertEqual(mic.watchers, 1)  # so it listens
+        await ws.close()
+        for _ in range(50):
+            if not mic.watchers:
+                break
+            await asyncio.sleep(0.01)
+        self.assertEqual(mic.watchers, 0)
 
 
 if __name__ == "__main__":

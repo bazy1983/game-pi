@@ -5,18 +5,25 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ledgames.audio import CHUNK, RATE, Loudness, find_device, sensitivity_range
+from ledgames.audio import BANDS, CHUNK, LISTEN_RATE, RATE, STEP, Loudness, Microphone, find_device, sensitivity_range
 from ledgames.effects.ambient import Level
 from ledgames.lights import Lights, make_lut
 from tests.test_lights import FakeMic
 
 DT = CHUNK / RATE
+N = CHUNK // STEP  # samples per chunk, at LISTEN_RATE
 
 
 def tone(db: float, rng: random.Random, offset: int = 50_000) -> list[int]:
-    """CHUNK samples of noise about `db` below full scale, plus a DC offset like the mic's."""
+    """A chunk of noise about `db` below full scale, plus a DC offset like the mic's."""
     amp = 2**31 * 10 ** (db / 20) * math.sqrt(3)  # uniform noise: rms = amp / √3
-    return [int(offset + rng.uniform(-amp, amp)) for _ in range(CHUNK)]
+    return [int(offset + rng.uniform(-amp, amp)) for _ in range(N)]
+
+
+def wobble(t: float, db: float, hz: float) -> list[int]:
+    """A chunk of a slow wave like the one the mic picks up, starting at time t."""
+    amp = 2**31 * 10 ** (db / 20) * math.sqrt(2)
+    return [int(amp * math.sin(2 * math.pi * hz * (t + i / LISTEN_RATE))) for i in range(N)]
 
 
 def feed(loud: Loudness, db: float, seconds: float, rng: random.Random) -> float:
@@ -69,8 +76,54 @@ class LoudnessTest(unittest.TestCase):
     def test_dc_offset_alone_is_silence(self):
         loud = Loudness()
         for _ in range(100):
-            level = loud.feed([123_456] * CHUNK, DT)
+            level = loud.feed([123_456] * N, DT)
         self.assertEqual(level, 0.0)
+
+    def test_a_slow_wobble_is_not_sound(self):
+        """The mic's wobble, far below hearing and louder than the room's
+        hiss (as measured on the unit), doesn't light the strip."""
+        rng = random.Random(6)
+        loud = Loudness()
+        t = 0.0
+        levels = []
+        for _ in range(round(5 / DT)):
+            hiss = tone(-75, rng)
+            levels.append(loud.feed([a + b + c for a, b, c in zip(hiss, wobble(t, -40, 7), wobble(t, -45, 30))], DT))
+            t += DT
+        self.assertLess(max(levels[25:]), 0.15)
+        self.assertLess(loud.db, -70)  # it hears just the hiss
+
+    def test_the_room_hiss_stays_dark_at_the_most_sensitive(self):
+        rng = random.Random(7)
+        loud = Loudness()
+        loud.min_range = sensitivity_range(1)
+        feed(loud, -75, 8, rng)
+        self.assertLess(max(loud.feed(tone(-75, rng), DT) for _ in range(100)), 0.1)
+        self.assertGreater(feed(loud, -60, 0.1, rng), 0.9)
+
+    def test_the_bands_show_where_the_sound_is(self):
+        loud = Loudness()
+        for i in range(3):
+            high = [int(2**31 * 0.1 * math.sin(2 * math.pi * 4800 * (i * N + j) / LISTEN_RATE)) for j in range(N)]
+            loud.feed(high, DT)
+        self.assertEqual(len(loud.bands), BANDS)
+        self.assertEqual(max(range(BANDS), key=loud.bands.__getitem__), BANDS - 2)  # 4.8 kHz: next to the top
+        self.assertAlmostEqual(loud.db, -23, delta=0.5)  # a sine at 0.1 of full scale: -23 dB
+
+
+class ReadingTest(unittest.TestCase):
+    def test_nothing_until_it_listens(self):
+        self.assertEqual(Microphone("plughw:9,0").reading(), {"listening": False})
+
+    def test_what_it_hears(self):
+        mic = Microphone("plughw:9,0")
+        mic._loudness = loud = Loudness()
+        feed(loud, -60, 1, random.Random(8))
+        r = mic.reading()
+        self.assertTrue(r["listening"])
+        self.assertAlmostEqual(r["db"], -60, delta=1.5)
+        self.assertLess(r["quiet"], r["full"])
+        self.assertEqual(len(r["bands"]), BANDS)
 
 
 class FindDeviceTest(unittest.TestCase):

@@ -20,6 +20,10 @@ The simulator pages: /sim draws the strip, /grid the grid.
 simulator page, after {"numLeds", "layout", "positions"} (where each LED is
 on the canvas, see layout.py), and again whenever the lights change.
 
+/ws/mic streams what the microphone hears, for the device page: about 20
+times a second, the microphone's `reading()` (see audio.py) plus "lights":
+whether a sound effect is showing it. It listens while anyone watches.
+
 HTTP (JSON):
   GET  /api/setup              Wi-Fi setup page state (nearby networks, errors)
   POST /api/setup/connect      {"ssid", "password"}: join the customer's network
@@ -71,6 +75,7 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 # player who disconnects is dropped only if they don't reconnect in time.
 # Long enough to survive a page reload.
 DROP_AFTER = 10
+MIC_STREAM = 1 / 20  # s between readings sent to /ws/mic
 DEFAULT_LEDS = 250  # the strip's, if it was never set
 GREEN: RGB = (0, 255, 0)
 RED: RGB = (255, 0, 0)
@@ -278,6 +283,34 @@ class Server:
                 pass
         finally:
             sender.cancel()
+        return ws
+
+    async def mic_handler(self, request: web.Request) -> web.WebSocketResponse:
+        ws = web.WebSocketResponse(heartbeat=10)
+        await ws.prepare(request)
+        request.app["sockets"].add(ws)
+        lights = self.engine.lights
+        mic = lights.mic
+        if not (mic and mic.available):
+            await ws.close()
+            return ws
+
+        async def stream():
+            try:
+                while not ws.closed:
+                    await ws.send_json(mic.reading() | {"lights": lights.listening})
+                    await asyncio.sleep(MIC_STREAM)
+            except ConnectionError:
+                pass  # the page closed
+
+        mic.watchers += 1
+        sender = asyncio.create_task(stream())
+        try:
+            async for _ in ws:
+                pass
+        finally:
+            sender.cancel()
+            mic.watchers -= 1
         return ws
 
 
@@ -655,6 +688,7 @@ def build_app(
         app.router.add_get("/sim", sim)
         app.router.add_get("/grid", grid)
         app.router.add_get("/ws/sim", server.sim_handler)
+    app.router.add_get("/ws/mic", server.mic_handler)
     app.router.add_static("/static", WEB_DIR)
     app.on_startup.append(start_engine)
     app.on_shutdown.append(shutdown)

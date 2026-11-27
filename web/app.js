@@ -2071,6 +2071,107 @@ function sendMic() {
 }
 $("mic-sensitivity").oninput = sendMic;
 
+// What the microphone hears, live (/ws/mic): a graph of how loud it was over the
+// last few seconds, with the band where the lights react, how full the strip
+// would be, and how loud each pitch is. The mic listens while this is open.
+const MIC_SECONDS = 10;
+const MIC_TOP = -10, MIC_BOTTOM = -90; // dB, the graph's range
+const BAND_TOP = -30, BAND_BOTTOM = -105; // each band has a share of the sound, so they're quieter
+let micWs = null;
+let micHistory = [];
+
+function micWatch(on) {
+  if (micWs) {
+    const old = micWs;
+    micWs = null;
+    old.close();
+  }
+  $("mic-monitor").classList.toggle("hidden", !on);
+  $("mic-watch").textContent = on ? "Hide what it hears" : "Show what it hears";
+  if (!on) return;
+  micHistory = [];
+  $("mic-now").textContent = "Starting the microphone…";
+  const ws = micWs = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/mic`);
+  ws.onmessage = (e) => {
+    const r = JSON.parse(e.data);
+    r.t = performance.now();
+    micHistory.push(r);
+    while (micHistory.length && micHistory[0].t < r.t - MIC_SECONDS * 1000) micHistory.shift();
+  };
+  ws.onclose = () => { if (micWs === ws) micWatch(false); };
+  requestAnimationFrame(micDraw);
+}
+$("mic-watch").onclick = () => micWatch(!micWs);
+
+function sizeCanvas(c) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.round(c.clientWidth * dpr), h = Math.round(c.clientHeight * dpr);
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, c.clientWidth, c.clientHeight);
+  return [ctx, c.clientWidth, c.clientHeight];
+}
+
+function micDraw() {
+  if (!micWs) return;
+  if (view !== "device" || document.hidden) return micWatch(false); // stop listening when nobody looks
+  requestAnimationFrame(micDraw);
+
+  const now = performance.now();
+  const heard = micHistory.filter((r) => r.listening);
+  const last = micHistory[micHistory.length - 1];
+  const [g, w, h] = sizeCanvas($("mic-graph"));
+  const x = (t) => w - ((now - t) / (MIC_SECONDS * 1000)) * w;
+  const y = (db) => h * Math.min(1, Math.max(0, (MIC_TOP - db) / (MIC_TOP - MIC_BOTTOM)));
+
+  g.font = "11px system-ui, sans-serif";
+  g.fillStyle = "#4a5263";
+  g.strokeStyle = "#232937";
+  g.lineWidth = 1;
+  for (let db = -80; db <= -20; db += 20) {
+    g.beginPath(); g.moveTo(0, y(db) + 0.5); g.lineTo(w, y(db) + 0.5); g.stroke();
+    g.fillText(`${db} dB`, 6, y(db) - 4);
+  }
+  if (heard.length > 1) {
+    g.fillStyle = "rgba(255, 176, 102, .25)"; // where the lights react: from quiet to full
+    g.beginPath();
+    heard.forEach((r, i) => (i ? g.lineTo : g.moveTo).call(g, x(r.t), y(r.full)));
+    for (let i = heard.length - 1; i >= 0; i--) g.lineTo(x(heard[i].t), y(heard[i].quiet));
+    g.closePath(); g.fill();
+    g.strokeStyle = "rgba(255, 176, 102, .7)";
+    g.beginPath();
+    heard.forEach((r, i) => (i ? g.lineTo : g.moveTo).call(g, x(r.t), y(r.quiet)));
+    g.stroke();
+    g.strokeStyle = "#eef1f6";
+    g.lineWidth = 2;
+    g.lineJoin = "round";
+    g.beginPath();
+    heard.forEach((r, i) => (i ? g.lineTo : g.moveTo).call(g, x(r.t), y(r.db)));
+    g.stroke();
+  }
+
+  const live = last && last.listening ? last : null;
+  $("mic-level").style.width = `${live ? live.level * 100 : 0}%`;
+  if (live) {
+    const lights = last.lights ? "" : " The lights aren't on a sound effect, so they don't show it now.";
+    $("mic-now").textContent = `Sound ${Math.round(live.db)} dB · lights start at ${Math.round(live.quiet)} dB, `
+      + `full at ${Math.round(live.full)} dB · strip ${Math.round(live.level * 100)}% full.${lights}`;
+  } else if (last) {
+    $("mic-now").textContent = "Starting the microphone…";
+  }
+
+  const [b, bw, bh] = sizeCanvas($("mic-bands"));
+  if (live) {
+    const n = live.bands.length, gap = 3, bar = (bw - gap * (n + 1)) / n;
+    live.bands.forEach((db, i) => {
+      const f = Math.min(1, Math.max(0, (db - BAND_BOTTOM) / (BAND_TOP - BAND_BOTTOM)));
+      b.fillStyle = `hsl(${200 - (i / (n - 1)) * 200}, 80%, 60%)`;
+      b.fillRect(gap + i * (bar + gap), bh - 4 - f * (bh - 8), bar, f * (bh - 8));
+    });
+  }
+}
+
 // --- speaker -------------------------------------------------------------------------
 
 let speaker = null;      // {available, on, volume}, from /api/device

@@ -256,7 +256,8 @@ fade back in. The choice is saved on the unit, so it survives a reboot.
 - Sound level (with the microphone, see Hardware): a bar rises with the
   sound, and a dot marks the recent peak. The level adapts to the room;
   Sensitivity on the device page sets how much sound fills the strip. The
-  microphone only listens while this effect is on, and nothing is recorded.
+  microphone only listens while this effect is on (or while the device page
+  shows what it hears), and nothing is recorded.
 
 To add an effect, write a class in `ledgames/effects/ambient.py` and add it to
 `EFFECTS`. The Pi Zero has about 33 ms per frame for everything: keep per-LED
@@ -327,6 +328,12 @@ The INMP441 I2S microphone (for sound-reactive lights):
 
 Keep its wires short (under ~15 cm). The installer turns on I2S in
 `/boot/firmware/config.txt`; reboot once afterwards.
+
+To see what it hears, open the device page and tap Show what it hears: a
+live graph of the sound, the band where the lights react, and how loud each
+pitch is. Only 125 Hz to 8 kHz counts as sound. The INMP441 also picks up a
+slow wobble, far below hearing and louder than a quiet room, which would
+otherwise make the lights flicker on their own.
 
 The speaker: a MAX98357A I2S amplifier with a 4–8 Ω, 3 W speaker. It uses
 the same I2S sound card as the microphone, and shares its clock pins:

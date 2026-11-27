@@ -140,6 +140,20 @@
       <div id="mic-controls">
         <input id="mic-sensitivity" class="slider" type="range" min="0" max="1" step="0.01" aria-label="Microphone sensitivity">
         <div class="slider-ends muted"><span>Less sensitive</span><span>More sensitive</span></div>
+        <button id="mic-watch" class="secondary">Show what it hears</button>
+        <div id="mic-monitor" class="hidden">
+          <canvas id="mic-graph" class="mic-graph" aria-label="How loud it was over the last 10 seconds"></canvas>
+          <div class="mic-key muted">
+            <span><i class="key-sound"></i>Sound</span><span><i class="key-range"></i>Where the lights react</span>
+          </div>
+          <div class="mic-meter" aria-label="How full the strip would be"><div id="mic-level"></div></div>
+          <p id="mic-now" class="muted"></p>
+          <h3 class="sub">Low to high pitch</h3>
+          <canvas id="mic-bands" class="mic-bands" aria-label="How loud each pitch is"></canvas>
+          <div class="slider-ends muted"><span>125 Hz</span><span>1 kHz</span><span>8 kHz</span></div>
+          <p class="muted mic-help">Below the shaded band the lights stay dark; at its top the strip is full.
+            In a quiet room the line should sit under the band. The band follows the room, and the slider above moves its top.</p>
+        </div>
       </div>
     </div>
     <div id="speaker-section" class="hidden">
